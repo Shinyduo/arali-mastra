@@ -1,0 +1,303 @@
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+import { db } from "../../../db/index.js";
+import { companies, appUser, stageDefinition } from "../../../db/schema.js";
+import { eq, and, gte, lte, ilike, asc, desc, sql, count } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+
+export const getCompanies = createTool({
+  id: "get-companies",
+  description:
+    "List companies with optional filters for health score, stage, ARR, owner, domain, name search, " +
+    "or custom field values. Companies may have enterprise-defined custom fields (e.g. 'contract_value', " +
+    "'industry', 'region'). Use customFieldFilters to filter by them, and set includeCustomFields=true " +
+    "to return their values. Use this for list/comparison queries like 'show me at-risk companies', " +
+    "'companies with ARR over 100k', or 'companies where region is APAC'.",
+  inputSchema: z.object({
+    healthScoreMin: z
+      .number()
+      .int()
+      .min(0)
+      .max(10)
+      .optional()
+      .describe("Minimum health score (0-10 inclusive)"),
+    healthScoreMax: z
+      .number()
+      .int()
+      .min(0)
+      .max(10)
+      .optional()
+      .describe("Maximum health score (0-10 inclusive)"),
+    stageKey: z
+      .string()
+      .optional()
+      .describe("Filter by stage key (e.g. 'onboarding', 'active', 'churned')"),
+    arrMin: z.number().optional().describe("Minimum ARR value"),
+    arrMax: z.number().optional().describe("Maximum ARR value"),
+    ownerEmail: z
+      .string()
+      .email()
+      .optional()
+      .describe("Filter by owner's email address"),
+    domain: z.string().optional().describe("Filter by company domain"),
+    search: z
+      .string()
+      .optional()
+      .describe("Search company name (case-insensitive partial match)"),
+    customFieldFilters: z
+      .array(
+        z.object({
+          fieldKey: z.string().describe("Custom field key (e.g. 'region', 'contract_value')"),
+          operator: z
+            .enum(["is", "is_not", "contains", "gt", "lt", "gte", "lte", "is_empty", "not_empty"])
+            .describe("Comparison operator"),
+          value: z
+            .string()
+            .optional()
+            .describe("Value to compare against (not needed for is_empty/not_empty)"),
+        }),
+      )
+      .optional()
+      .describe("Filter by custom field values. Each filter specifies a field key, operator, and value."),
+    includeCustomFields: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("If true, include custom field values in the response"),
+    sortBy: z
+      .enum(["healthScore", "arr", "name", "updatedAt"])
+      .optional()
+      .default("name")
+      .describe("Sort field"),
+    sortOrder: z
+      .enum(["asc", "desc"])
+      .optional()
+      .default("asc")
+      .describe("Sort direction"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .default(25)
+      .describe("Max results to return"),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .default(0)
+      .describe("Offset for pagination"),
+  }),
+  execute: async (input, context) => {
+    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+      context.requestContext!,
+    );
+
+    const scopeFilter = buildCompanyScopeFilter(
+      userRole,
+      userId,
+      orgUnitIds,
+    );
+
+    const owner = appUser;
+    const stage = stageDefinition;
+
+    // Build custom field filter SQL fragments
+    const customFieldConditions = (input.customFieldFilters ?? []).map((f) => {
+      const valueCol = sql`COALESCE(fv_cf.value_text, fv_cf.value_number)`;
+
+      let comparison: ReturnType<typeof sql>;
+      switch (f.operator) {
+        case "is":
+          comparison = sql`${valueCol} = ${f.value}`;
+          break;
+        case "is_not":
+          comparison = sql`${valueCol} != ${f.value}`;
+          break;
+        case "contains":
+          comparison = sql`${valueCol} ILIKE ${"%" + (f.value ?? "") + "%"}`;
+          break;
+        case "gt":
+          comparison = sql`fv_cf.value_number::numeric > ${f.value}::numeric`;
+          break;
+        case "lt":
+          comparison = sql`fv_cf.value_number::numeric < ${f.value}::numeric`;
+          break;
+        case "gte":
+          comparison = sql`fv_cf.value_number::numeric >= ${f.value}::numeric`;
+          break;
+        case "lte":
+          comparison = sql`fv_cf.value_number::numeric <= ${f.value}::numeric`;
+          break;
+        case "is_empty":
+          return sql`NOT EXISTS (
+            SELECT 1 FROM field_values fv_cf
+            JOIN field_definitions fd_cf ON fd_cf.id = fv_cf.field_definition_id
+            WHERE fv_cf.entity_type IN ('company', 'companies')
+              AND fv_cf.entity_id = ${companies.id}
+              AND fd_cf.field_key = ${f.fieldKey}
+              AND fd_cf.enterprise_id = ${enterpriseId}
+          )`;
+        case "not_empty":
+          return sql`EXISTS (
+            SELECT 1 FROM field_values fv_cf
+            JOIN field_definitions fd_cf ON fd_cf.id = fv_cf.field_definition_id
+            WHERE fv_cf.entity_type IN ('company', 'companies')
+              AND fv_cf.entity_id = ${companies.id}
+              AND fd_cf.field_key = ${f.fieldKey}
+              AND fd_cf.enterprise_id = ${enterpriseId}
+          )`;
+        default:
+          comparison = sql`${valueCol} = ${f.value}`;
+      }
+
+      return sql`EXISTS (
+        SELECT 1 FROM field_values fv_cf
+        JOIN field_definitions fd_cf ON fd_cf.id = fv_cf.field_definition_id
+        WHERE fv_cf.entity_type IN ('company', 'companies')
+          AND fv_cf.entity_id = ${companies.id}
+          AND fd_cf.field_key = ${f.fieldKey}
+          AND fd_cf.enterprise_id = ${enterpriseId}
+          AND ${comparison}
+      )`;
+    });
+
+    const conditions = [
+      eq(companies.enterpriseId, enterpriseId),
+      scopeFilter,
+      input.healthScoreMin !== undefined
+        ? gte(companies.healthScore, input.healthScoreMin)
+        : undefined,
+      input.healthScoreMax !== undefined
+        ? lte(companies.healthScore, input.healthScoreMax)
+        : undefined,
+      input.stageKey ? eq(stage.key, input.stageKey) : undefined,
+      input.arrMin !== undefined
+        ? gte(companies.ARR, input.arrMin)
+        : undefined,
+      input.arrMax !== undefined
+        ? lte(companies.ARR, input.arrMax)
+        : undefined,
+      input.ownerEmail ? eq(owner.email, input.ownerEmail) : undefined,
+      input.domain ? eq(companies.domain, input.domain) : undefined,
+      input.search
+        ? ilike(companies.name, `%${input.search}%`)
+        : undefined,
+      ...customFieldConditions,
+    ].filter(Boolean);
+
+    const sortBy = input.sortBy ?? "name";
+    const sortOrder = input.sortOrder ?? "asc";
+    const limit = input.limit ?? 25;
+    const offset = input.offset ?? 0;
+    const includeCustomFields = input.includeCustomFields ?? false;
+
+    const sortColumnMap = {
+      healthScore: companies.healthScore,
+      arr: companies.ARR,
+      name: companies.name,
+      updatedAt: companies.updatedAt,
+    } as const;
+    const sortColumn = sortColumnMap[sortBy];
+    const orderFn = sortOrder === "desc" ? desc : asc;
+
+    const [rows, [countResult]] = await Promise.all([
+      db
+        .select({
+          id: companies.id,
+          name: companies.name,
+          domain: companies.domain,
+          healthScore: companies.healthScore,
+          arr: companies.ARR,
+          ownerName: owner.name,
+          ownerEmail: owner.email,
+          stageName: stage.name,
+          stageKey: stage.key,
+          updatedAt: companies.updatedAt,
+        })
+        .from(companies)
+        .leftJoin(owner, eq(companies.ownerUserId, owner.id))
+        .leftJoin(stage, eq(companies.stageDefinitionId, stage.id))
+        .where(and(...conditions))
+        .orderBy(orderFn(sortColumn))
+        .limit(limit)
+        .offset(offset),
+
+      db
+        .select({ total: count() })
+        .from(companies)
+        .leftJoin(owner, eq(companies.ownerUserId, owner.id))
+        .leftJoin(stage, eq(companies.stageDefinitionId, stage.id))
+        .where(and(...conditions)),
+    ]);
+
+    // Fetch custom fields for returned companies if requested
+    let customFieldsMap: Record<string, Record<string, unknown>> = {};
+    if (includeCustomFields && rows.length > 0) {
+      const companyIds = rows.map((r) => r.id);
+      const cfRows = await db.execute(sql`
+        SELECT
+          fv.entity_id AS company_id,
+          fd.field_key,
+          fd.field_name,
+          fd.field_type,
+          fv.value_text,
+          fv.value_number,
+          fv.value_date,
+          fv.value_bool,
+          fv.value_json
+        FROM field_values fv
+        JOIN field_definitions fd ON fd.id = fv.field_definition_id
+        WHERE fv.entity_type IN ('company', 'companies')
+          AND fd.entity_type IN ('company', 'companies')
+          AND fv.enterprise_id = ${enterpriseId}
+          AND fv.entity_id = ANY(${companyIds}::uuid[])
+        ORDER BY fd.display_order NULLS LAST, fd.field_name
+      `);
+
+      for (const cf of cfRows as any[]) {
+        const cid = cf.company_id as string;
+        if (!customFieldsMap[cid]) customFieldsMap[cid] = {};
+        // Return the appropriate value based on field type
+        const value =
+          cf.field_type === "number"
+            ? cf.value_number != null
+              ? Number(cf.value_number)
+              : null
+            : cf.field_type === "date"
+              ? cf.value_date
+                ? new Date(cf.value_date).toISOString().slice(0, 10)
+                : null
+              : cf.field_type === "boolean"
+                ? cf.value_bool
+                : cf.field_type === "json" || cf.field_type === "multi_enum"
+                  ? cf.value_json
+                  : cf.value_text;
+        customFieldsMap[cid][cf.field_name ?? cf.field_key] = value;
+      }
+    }
+
+    const total = Number(countResult?.total ?? 0);
+    return {
+      companies: rows.map((r) => {
+        const base: Record<string, unknown> = {
+          name: r.name,
+          domain: r.domain ?? "—",
+          healthScore: r.healthScore ?? "N/A",
+          arr: r.arr ?? "N/A",
+          owner: r.ownerName ?? "Unassigned",
+          stage: r.stageName ?? "—",
+          lastUpdated: r.updatedAt?.toISOString().slice(0, 10) ?? "—",
+        };
+        if (includeCustomFields && customFieldsMap[r.id]) {
+          base.customFields = customFieldsMap[r.id];
+        }
+        return base;
+      }),
+      totalCount: total,
+      showing: `${offset + 1}–${Math.min(offset + limit, total)}`,
+    };
+  },
+});

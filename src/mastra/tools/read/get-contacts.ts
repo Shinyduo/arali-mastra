@@ -1,0 +1,92 @@
+import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+import { db } from "../../../db/index.js";
+import {
+  contacts,
+  contactEmails,
+  contactPhones,
+  customerCompany,
+  companies,
+} from "../../../db/schema.js";
+import { eq, and, ilike, sql, desc } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+
+export const getContacts = createTool({
+  id: "get-contacts",
+  description:
+    "List contacts (people at customer companies). " +
+    "Use for 'who are the contacts at Acme?', 'find contact with email john@acme.com', " +
+    "or 'contacts with title VP'.",
+  inputSchema: z.object({
+    companyName: z
+      .string()
+      .optional()
+      .describe("Filter by associated company name (partial match)"),
+    emailSearch: z
+      .string()
+      .optional()
+      .describe("Search by email address (partial match)"),
+    nameSearch: z
+      .string()
+      .optional()
+      .describe("Search by contact name (partial match)"),
+    titleSearch: z
+      .string()
+      .optional()
+      .describe("Search by job title (partial match)"),
+    limit: z.number().int().min(1).max(50).optional().default(20),
+    offset: z.number().int().min(0).optional().default(0),
+  }),
+  execute: async (input, context) => {
+    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+      context.requestContext!,
+    );
+
+    const limit = input.limit ?? 20;
+    const offset = input.offset ?? 0;
+
+    // Use raw SQL for the complex join chain with RBAC
+    const rows = await db.execute(sql`
+      SELECT DISTINCT ON (ct.id)
+        ct.full_name,
+        ct.title,
+        ce.email AS primary_email,
+        cp.phone AS primary_phone,
+        c.name AS company_name,
+        cc.relation,
+        ct.created_at
+      FROM contacts ct
+      LEFT JOIN contact_emails ce ON ce.contact_id = ct.id AND ce.is_primary = true
+      LEFT JOIN contact_phones cp ON cp.contact_id = ct.id AND cp.is_primary = true
+      LEFT JOIN customer_company cc ON cc.contact_id = ct.id
+      LEFT JOIN companies c ON c.id = cc.company_id
+      WHERE ct.enterprise_id = ${enterpriseId}
+        ${input.nameSearch ? sql`AND ct.full_name ILIKE ${"%" + input.nameSearch + "%"}` : sql``}
+        ${input.titleSearch ? sql`AND ct.title ILIKE ${"%" + input.titleSearch + "%"}` : sql``}
+        ${input.emailSearch ? sql`AND ce.email ILIKE ${"%" + input.emailSearch + "%"}` : sql``}
+        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${
+          userRole !== "admin"
+            ? sql`AND (
+                c.id IS NULL OR
+                ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}
+              )`
+            : sql``
+        }
+      ORDER BY ct.id, ct.created_at DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `);
+
+    return {
+      contacts: (rows as any[]).map((r: any) => ({
+        name: r.full_name ?? "—",
+        title: r.title ?? "—",
+        email: r.primary_email ?? "—",
+        phone: r.primary_phone ?? "—",
+        company: r.company_name ?? "—",
+        relation: r.relation ?? "—",
+      })),
+    };
+  },
+});
