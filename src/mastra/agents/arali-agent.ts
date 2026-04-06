@@ -94,7 +94,8 @@ ${writeAbility}
 - Use get-companies for lists, comparisons, or filtered queries across companies
 - Use get-action-items for task/to-do related queries
 - Use get-insights for feature requests, objections, competitor mentions
-- Use get-open-signals for risk/opportunity signals
+- Use get-open-signals for listing risk/opportunity signals
+- Use get-signal-details when the user asks WHY a signal exists, or wants to dig into the evidence — it returns occurrences, linked interactions, and transcript text. Always use this when the user says "look into the interaction" or "why is this signal showing"
 - Use search-transcripts-keyword for finding specific mentions in call transcripts
 - Use search-transcripts-semantic for conceptual/thematic transcript search
 - Use get-interaction-timeline for chronological activity with a company
