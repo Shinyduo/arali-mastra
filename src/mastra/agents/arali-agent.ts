@@ -107,10 +107,11 @@ ${writeAbility}
 
 ## Tool Usage
 - Use get-company-overview for questions about a single company
-- Use get-companies for lists, comparisons, or filtered queries across companies
-- Use get-action-items for task/to-do related queries
+- Use get-companies for lists, comparisons, or filtered queries across companies. Supports: health trend filter (declining/improving/stable), no-owner filter, days since last interaction, creation date range
+- Use get-action-items for task/to-do related queries. Supports: unassigned filter, due date range, creation date range, sort by dueAt/createdAt/priority
 - Use get-insights for feature requests, objections, competitor mentions
-- Use get-open-signals for listing risk/opportunity signals
+- Use get-open-signals for listing risk/opportunity signals. Supports: unassigned filter, overdue filter, first-seen date range
+- Use get-contacts for contact/people/lead queries. Supports: creation date range for "new leads today" type queries
 - Use get-signal-details when the user asks WHY a signal exists, or wants to dig into the evidence — it returns occurrences, linked interactions, and transcript text. Always use this when the user says "look into the interaction" or "why is this signal showing"
 - Use search-transcripts-keyword for finding specific mentions in call transcripts
 - Use search-transcripts-semantic for conceptual/thematic transcript search
@@ -119,7 +120,6 @@ ${writeAbility}
 - Use get-tickets for support ticket queries
 - Use get-portfolio-health-trend for health score trends over time
 - Use search-thread-messages for searching emails, Slack messages, WhatsApp
-- Use get-contacts for contact/people queries
 - Use get-metrics for NPS, CSAT, BANT scores, meeting summaries, talk ratios, and any other tracked metrics. Call without metricKey first to discover available metrics.
 - Use get-team-members to resolve a person's first name to their email
 - Use brief-me for pre-call prep: "brief me on Acme" returns overview + signals + action items + recent interactions + last meeting insights in one shot

@@ -76,8 +76,8 @@ export const getPortfolioHealthTrend = createTool({
       WHERE emh.enterprise_id = ${enterpriseId}
         AND emh.entity_type = 'company'
         AND emh.metric_key = 'health_score'
-        AND emh.effective_at >= ${startDate}::timestamptz
-        AND emh.effective_at <= ${endDate}::timestamptz
+        AND emh.effective_at >= ${startDate}::date
+        AND emh.effective_at < (${endDate}::date + INTERVAL '1 day')
         ${rbacWhere}
       GROUP BY period${groupBy !== "none" ? sql`, group_label` : sql``}
       ORDER BY period ASC${groupBy !== "none" ? sql`, group_label` : sql``}

@@ -56,8 +56,8 @@ export const searchThreadMessages = createTool({
         AND tm.enterprise_id = ${enterpriseId}
         ${input.channel ? sql`AND th.channel = ${input.channel}` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
-        ${input.startDate ? sql`AND tm.sent_at >= ${input.startDate}::timestamptz` : sql``}
-        ${input.endDate ? sql`AND tm.sent_at <= ${input.endDate}::timestamptz` : sql``}
+        ${input.startDate ? sql`AND tm.sent_at >= ${input.startDate}::date` : sql``}
+        ${input.endDate ? sql`AND tm.sent_at < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
         ${
           !getCompanyScope(capabilities)?.enterprise
             ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`

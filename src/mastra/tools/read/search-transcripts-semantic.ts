@@ -61,8 +61,8 @@ export const searchTranscriptsSemantic = createTool({
       LEFT JOIN companies c ON c.id = ic.company_id
       WHERE c.enterprise_id = ${enterpriseId}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
-        ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
-        ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
+        ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::date` : sql``}
+        ${input.endDate ? sql`AND i.start_at < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
         ${
           !getCompanyScope(capabilities)?.enterprise
             ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`

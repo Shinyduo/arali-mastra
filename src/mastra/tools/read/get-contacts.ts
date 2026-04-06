@@ -79,8 +79,8 @@ export const getContacts = createTool({
         ${input.titleSearch ? sql`AND ct.title ILIKE ${"%" + input.titleSearch + "%"}` : sql``}
         ${input.emailSearch ? sql`AND ce.email ILIKE ${"%" + input.emailSearch + "%"}` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
-        ${input.createdAfter ? sql`AND ct.created_at >= ${input.createdAfter}::timestamptz` : sql``}
-        ${input.createdBefore ? sql`AND ct.created_at <= ${input.createdBefore}::timestamptz` : sql``}
+        ${input.createdAfter ? sql`AND ct.created_at >= ${input.createdAfter}::date` : sql``}
+        ${input.createdBefore ? sql`AND ct.created_at < (${input.createdBefore}::date + INTERVAL '1 day')` : sql``}
         ${
           !getCompanyScope(capabilities)?.enterprise
             ? sql`AND (

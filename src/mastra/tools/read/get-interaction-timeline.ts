@@ -49,6 +49,7 @@ export const getInteractionTimeline = createTool({
     const hasUserFilter = !!input.userEmail;
     const scope = getCompanyScope(capabilities);
 
+    // Main query for interactions
     const rows = await db.execute(sql`
       SELECT DISTINCT ON (i.id)
         i.id,
@@ -72,8 +73,8 @@ export const getInteractionTimeline = createTool({
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${hasUserFilter ? sql`AND p_user.id IS NOT NULL` : sql``}
         ${input.kind ? sql`AND i.kind = ${input.kind}` : sql``}
-        ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
-        ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
+        ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::date` : sql``}
+        ${input.endDate ? sql`AND i.start_at < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
         ${
           !scope?.enterprise
             ? sql`AND (
@@ -85,6 +86,23 @@ export const getInteractionTimeline = createTool({
       ORDER BY i.id, i.start_at DESC NULLS LAST
       LIMIT ${limit}
     `);
+
+    // Fetch participants for the returned interactions
+    const interactionIds = (rows as any[]).map((r: any) => r.id).filter(Boolean);
+    let participantsMap: Record<string, string[]> = {};
+    if (interactionIds.length > 0) {
+      const participants = await db.execute(sql`
+        SELECT p.interaction_id, p.display_name
+        FROM participants p
+        WHERE p.interaction_id = ANY(${interactionIds}::uuid[])
+        ORDER BY p.interaction_id, p.display_name
+      `);
+      for (const p of participants as any[]) {
+        const iid = p.interaction_id as string;
+        if (!participantsMap[iid]) participantsMap[iid] = [];
+        if (p.display_name) participantsMap[iid].push(p.display_name);
+      }
+    }
 
     return {
       interactions: (rows as any[]).map((r: any) => ({
@@ -103,6 +121,7 @@ export const getInteractionTimeline = createTool({
           : null,
         source: r.source,
         company: r.company_name ?? "—",
+        participants: participantsMap[r.id] ?? [],
       })),
     };
   },

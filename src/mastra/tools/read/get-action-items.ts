@@ -8,15 +8,16 @@ import {
   companies,
   appUser,
 } from "../../../db/schema.js";
-import { eq, and, lt, desc, count, sql } from "drizzle-orm";
+import { eq, and, lt, gte, lte, asc, desc, count, sql, isNull } from "drizzle-orm";
 import { extractContext, getCompanyScope, buildOwnerScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getActionItems = createTool({
   id: "get-action-items",
   description:
     "List action items (tasks/to-dos) with optional filters for status, priority, owner, overdue, " +
-    "or associated company. Use this for queries like 'my overdue tasks', 'high priority action items', " +
-    "or 'action items for Acme Corp'.",
+    "date range, or associated company. Use this for queries like 'my overdue tasks', " +
+    "'high priority action items', 'action items for Acme Corp', 'tasks created this week', " +
+    "'unassigned action items', 'items due this week', or 'what tasks were completed today?'.",
   inputSchema: z.object({
     status: z
       .enum(["open", "in_progress", "blocked", "done", "archived"])
@@ -33,14 +34,44 @@ export const getActionItems = createTool({
       .email()
       .optional()
       .describe("Filter by action item owner's email"),
+    unassigned: z
+      .boolean()
+      .optional()
+      .describe("If true, only show items with no assigned owner"),
     overdue: z
       .boolean()
       .optional()
       .describe("If true, only show items where dueAt is in the past"),
+    dueBefore: z
+      .string()
+      .optional()
+      .describe("Only items due on or before this date (YYYY-MM-DD). Use for 'due this week'."),
+    dueAfter: z
+      .string()
+      .optional()
+      .describe("Only items due on or after this date (YYYY-MM-DD)"),
+    createdAfter: z
+      .string()
+      .optional()
+      .describe("Only items created on or after this date (YYYY-MM-DD). Use for 'tasks created today'."),
+    createdBefore: z
+      .string()
+      .optional()
+      .describe("Only items created on or before this date (YYYY-MM-DD)"),
     companyName: z
       .string()
       .optional()
       .describe("Filter by associated company name (partial match)"),
+    sortBy: z
+      .enum(["dueAt", "createdAt", "priority"])
+      .optional()
+      .default("dueAt")
+      .describe("Sort field. Default: dueAt."),
+    sortOrder: z
+      .enum(["asc", "desc"])
+      .optional()
+      .default("desc")
+      .describe("Sort direction"),
     limit: z
       .number()
       .int()
@@ -76,7 +107,20 @@ export const getActionItems = createTool({
         : undefined,
       input.priority ? eq(actionItem.priority, input.priority) : undefined,
       input.ownerEmail ? eq(appUser.email, input.ownerEmail) : undefined,
+      input.unassigned ? isNull(actionItem.ownerUserId) : undefined,
       input.overdue ? lt(actionItem.dueAt, new Date()) : undefined,
+      input.dueBefore
+        ? lte(actionItem.dueAt, new Date(input.dueBefore + "T23:59:59.999Z"))
+        : undefined,
+      input.dueAfter
+        ? gte(actionItem.dueAt, new Date(input.dueAfter))
+        : undefined,
+      input.createdAfter
+        ? gte(actionItem.createdAt, new Date(input.createdAfter))
+        : undefined,
+      input.createdBefore
+        ? lte(actionItem.createdAt, new Date(input.createdBefore + "T23:59:59.999Z"))
+        : undefined,
       input.companyName
         ? fuzzyNameMatch(companies.name, input.companyName!)
         : undefined,
@@ -85,6 +129,15 @@ export const getActionItems = createTool({
     const limit = input.limit ?? 20;
     const offset = input.offset ?? 0;
 
+    const sortBy = input.sortBy ?? "dueAt";
+    const sortOrder = input.sortOrder ?? "desc";
+    const orderFn = sortOrder === "desc" ? desc : asc;
+    const sortColumnMap = {
+      dueAt: actionItem.dueAt,
+      createdAt: actionItem.createdAt,
+      priority: actionItem.priority,
+    } as const;
+
     const [rows, [countResult]] = await Promise.all([
       db
         .select({
@@ -92,6 +145,7 @@ export const getActionItems = createTool({
           description: actionItem.description,
           priority: actionItem.priority,
           dueAt: actionItem.dueAt,
+          createdAt: actionItem.createdAt,
           ownerName: appUser.name,
           ownerEmail: appUser.email,
           stageName: pipelineStage.name,
@@ -113,7 +167,7 @@ export const getActionItems = createTool({
         )
         .leftJoin(companies, eq(actionItemEntity.entityId, companies.id))
         .where(and(...conditions))
-        .orderBy(desc(actionItem.dueAt))
+        .orderBy(orderFn(sortColumnMap[sortBy]))
         .limit(limit)
         .offset(offset),
 
@@ -138,17 +192,26 @@ export const getActionItems = createTool({
 
     const now = new Date();
     return {
-      actionItems: rows.map((r) => ({
-        title: r.title,
-        description: r.description ?? "—",
-        priority: r.priority,
-        dueAt: r.dueAt?.toISOString().slice(0, 10) ?? "No due date",
-        isOverdue: r.dueAt ? r.dueAt < now : false,
-        owner: r.ownerName ?? "Unassigned",
-        status: r.stageBucket ?? "unknown",
-        stageName: r.stageName ?? "—",
-        company: r.companyName ?? "—",
-      })),
+      actionItems: rows.map((r) => {
+        const isOverdue = r.dueAt ? r.dueAt < now : false;
+        const daysOverdue = isOverdue && r.dueAt
+          ? Math.floor((now.getTime() - r.dueAt.getTime()) / 86400000)
+          : null;
+
+        return {
+          title: r.title,
+          description: r.description ?? "—",
+          priority: r.priority,
+          dueAt: r.dueAt?.toISOString().slice(0, 10) ?? "No due date",
+          isOverdue,
+          daysOverdue,
+          createdAt: r.createdAt?.toISOString().slice(0, 10) ?? "—",
+          owner: r.ownerName ?? "Unassigned",
+          status: r.stageBucket ?? "unknown",
+          stageName: r.stageName ?? "—",
+          company: r.companyName ?? "—",
+        };
+      }),
       totalCount: countResult?.total ?? 0,
     };
   },

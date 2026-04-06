@@ -14,7 +14,8 @@ export const getTickets = createTool({
   id: "get-tickets",
   description:
     "List support tickets with status, subject, and resolution times. " +
-    "Use for 'open tickets for Acme', 'resolved tickets this month', or 'average resolution time'.",
+    "Use for 'open tickets for Acme', 'resolved tickets this month', " +
+    "'tickets raised this week', or 'average resolution time'.",
   inputSchema: z.object({
     status: z
       .enum(["open", "pending", "resolved", "closed", "archived"])
@@ -27,11 +28,11 @@ export const getTickets = createTool({
     startDate: z
       .string()
       .optional()
-      .describe("Filter tickets created after this date (YYYY-MM-DD)"),
+      .describe("Filter tickets created on or after this date (YYYY-MM-DD)"),
     endDate: z
       .string()
       .optional()
-      .describe("Filter tickets created before this date (YYYY-MM-DD)"),
+      .describe("Filter tickets created on or before this date (YYYY-MM-DD). End-of-day inclusive."),
     limit: z.number().int().min(1).max(50).optional().default(20),
     offset: z.number().int().min(0).optional().default(0),
   }),
@@ -61,7 +62,7 @@ export const getTickets = createTool({
         ? gte(tickets.createdAt, new Date(input.startDate))
         : undefined,
       input.endDate
-        ? lte(tickets.createdAt, new Date(input.endDate))
+        ? lte(tickets.createdAt, new Date(input.endDate + "T23:59:59.999Z"))
         : undefined,
     ].filter(Boolean);
 
@@ -75,6 +76,7 @@ export const getTickets = createTool({
           issueResolvedAt: tickets.issueResolvedAt,
           companyName: companies.name,
           providerKey: tickets.providerKey,
+          createdAt: tickets.createdAt,
         })
         .from(tickets)
         .innerJoin(
@@ -115,6 +117,7 @@ export const getTickets = createTool({
           company: r.companyName,
           provider: r.providerKey,
           raisedAt: r.issueRaisedAt?.toISOString().slice(0, 10) ?? "—",
+          createdAt: r.createdAt?.toISOString().slice(0, 10) ?? "—",
           firstResponseHours: firstResponseMs
             ? Math.round(firstResponseMs / 3600000)
             : null,

@@ -9,11 +9,12 @@ export const getCompanies = createTool({
   id: "get-companies",
   description:
     "List companies with optional filters for health score, stage, ARR, owner, domain, name search, " +
-    "creation date, or custom field values. Companies may have enterprise-defined custom fields " +
+    "creation date, inactivity, or custom field values. Companies may have enterprise-defined custom fields " +
     "(e.g. 'contract_value', 'industry', 'region'). Use customFieldFilters to filter by them, " +
     "and set includeCustomFields=true to return their values. Use this for list/comparison queries " +
     "like 'show me at-risk companies', 'companies with ARR over 100k', 'companies where region is APAC', " +
-    "'new companies added today', or 'which companies came in this week?'.",
+    "'new companies added today', 'which companies came in this week?', " +
+    "'companies with no owner', 'untouched accounts in 30 days', or 'companies with declining health'.",
   inputSchema: z.object({
     healthScoreMin: z
       .number()
@@ -39,7 +40,21 @@ export const getCompanies = createTool({
       .string()
       .email()
       .optional()
-      .describe("Filter by owner's email address"),
+      .describe("Filter by assigned user's email (via key role assignments). Use for 'my companies' or 'companies assigned to X'."),
+    hasNoOwner: z
+      .boolean()
+      .optional()
+      .describe("If true, only show companies with no active key role assignments (no CSM, AE, etc.). Use for 'unassigned companies'."),
+    daysSinceLastInteraction: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe("Only companies with no interactions in the last N days. Use for 'untouched accounts', 'companies not contacted in 30 days'."),
+    healthTrend: z
+      .enum(["declining", "improving", "stable"])
+      .optional()
+      .describe("Filter by health score trend direction over the last 30 days. 'declining' = dropped by 1+, 'improving' = rose by 1+, 'stable' = changed less than 1."),
     domain: z.string().optional().describe("Filter by company domain"),
     search: z
       .string()
@@ -189,7 +204,16 @@ export const getCompanies = createTool({
       input.arrMax !== undefined
         ? lte(companies.ARR, input.arrMax)
         : undefined,
-      input.ownerEmail ? eq(owner.email, input.ownerEmail) : undefined,
+      input.ownerEmail
+        ? sql`EXISTS (
+            SELECT 1 FROM key_role_assignments kra
+            JOIN app_user au_kr ON au_kr.id = kra.user_id
+            WHERE kra.entity_type = 'company'
+              AND kra.entity_id = ${companies.id}
+              AND kra.end_at IS NULL
+              AND au_kr.email = ${input.ownerEmail}
+          )`
+        : undefined,
       input.domain ? eq(companies.domain, input.domain) : undefined,
       input.search
         ? fuzzyNameMatch(companies.name, input.search)
@@ -200,6 +224,78 @@ export const getCompanies = createTool({
       input.createdBefore
         ? lte(companies.createdAt, new Date(input.createdBefore + "T23:59:59.999Z"))
         : undefined,
+      input.hasNoOwner
+        ? sql`NOT EXISTS (
+            SELECT 1 FROM key_role_assignments kra
+            WHERE kra.entity_type = 'company'
+              AND kra.entity_id = ${companies.id}
+              AND kra.end_at IS NULL
+          )`
+        : undefined,
+      input.daysSinceLastInteraction
+        ? sql`NOT EXISTS (
+            SELECT 1 FROM interaction_company ic
+            JOIN interactions i ON i.id = ic.interaction_id
+            WHERE ic.company_id = ${companies.id}
+              AND i.start_at >= NOW() - INTERVAL '${sql.raw(String(input.daysSinceLastInteraction))} days'
+          )`
+        : undefined,
+      input.healthTrend === "declining"
+        ? sql`EXISTS (
+            SELECT 1 FROM entity_metric_history emh
+            WHERE emh.entity_type = 'company' AND emh.entity_id = ${companies.id}
+              AND emh.metric_key = 'health_score' AND emh.enterprise_id = ${enterpriseId}
+              AND emh.effective_at >= NOW() - INTERVAL '30 days'
+            HAVING MAX(emh.value_number::numeric) - MIN(emh.value_number::numeric) >= 1
+              AND (
+                SELECT emh2.value_number::numeric FROM entity_metric_history emh2
+                WHERE emh2.entity_type = 'company' AND emh2.entity_id = ${companies.id}
+                  AND emh2.metric_key = 'health_score' AND emh2.enterprise_id = ${enterpriseId}
+                ORDER BY emh2.effective_at DESC LIMIT 1
+              ) < (
+                SELECT emh3.value_number::numeric FROM entity_metric_history emh3
+                WHERE emh3.entity_type = 'company' AND emh3.entity_id = ${companies.id}
+                  AND emh3.metric_key = 'health_score' AND emh3.enterprise_id = ${enterpriseId}
+                ORDER BY emh3.effective_at ASC LIMIT 1
+              )
+          )`
+        : input.healthTrend === "improving"
+          ? sql`EXISTS (
+              SELECT 1 FROM entity_metric_history emh
+              WHERE emh.entity_type = 'company' AND emh.entity_id = ${companies.id}
+                AND emh.metric_key = 'health_score' AND emh.enterprise_id = ${enterpriseId}
+                AND emh.effective_at >= NOW() - INTERVAL '30 days'
+              HAVING (
+                SELECT emh2.value_number::numeric FROM entity_metric_history emh2
+                WHERE emh2.entity_type = 'company' AND emh2.entity_id = ${companies.id}
+                  AND emh2.metric_key = 'health_score' AND emh2.enterprise_id = ${enterpriseId}
+                ORDER BY emh2.effective_at DESC LIMIT 1
+              ) > (
+                SELECT emh3.value_number::numeric FROM entity_metric_history emh3
+                WHERE emh3.entity_type = 'company' AND emh3.entity_id = ${companies.id}
+                  AND emh3.metric_key = 'health_score' AND emh3.enterprise_id = ${enterpriseId}
+                ORDER BY emh3.effective_at ASC LIMIT 1
+              ) + 1
+            )`
+          : input.healthTrend === "stable"
+            ? sql`EXISTS (
+                SELECT 1 FROM entity_metric_history emh
+                WHERE emh.entity_type = 'company' AND emh.entity_id = ${companies.id}
+                  AND emh.metric_key = 'health_score' AND emh.enterprise_id = ${enterpriseId}
+                  AND emh.effective_at >= NOW() - INTERVAL '30 days'
+                HAVING ABS(
+                  (SELECT emh2.value_number::numeric FROM entity_metric_history emh2
+                   WHERE emh2.entity_type = 'company' AND emh2.entity_id = ${companies.id}
+                     AND emh2.metric_key = 'health_score' AND emh2.enterprise_id = ${enterpriseId}
+                   ORDER BY emh2.effective_at DESC LIMIT 1)
+                  -
+                  (SELECT emh3.value_number::numeric FROM entity_metric_history emh3
+                   WHERE emh3.entity_type = 'company' AND emh3.entity_id = ${companies.id}
+                     AND emh3.metric_key = 'health_score' AND emh3.enterprise_id = ${enterpriseId}
+                   ORDER BY emh3.effective_at ASC LIMIT 1)
+                ) < 1
+              )`
+            : undefined,
       ...customFieldConditions,
     ].filter(Boolean);
 

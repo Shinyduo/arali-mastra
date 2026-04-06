@@ -165,8 +165,8 @@ export const getMetrics = createTool({
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.meetingTitle ? sql`AND i.title ILIKE ${"%" + input.meetingTitle + "%"}` : sql``}
         ${input.userEmail ? sql`AND au.email = ${input.userEmail}` : sql``}
-        ${input.startDate ? sql`AND COALESCE(md.date, md.computed_at) >= ${input.startDate}::timestamptz` : sql``}
-        ${input.endDate ? sql`AND COALESCE(md.date, md.computed_at) <= ${input.endDate}::timestamptz` : sql``}
+        ${input.startDate ? sql`AND COALESCE(md.date, md.computed_at) >= ${input.startDate}::date` : sql``}
+        ${input.endDate ? sql`AND COALESCE(md.date, md.computed_at) < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
         ${
           !getCompanyScope(capabilities)?.enterprise
             ? sql`AND (
