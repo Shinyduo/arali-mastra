@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "mastra dev",
     "build": "mastra build --studio",
-    "start": "MASTRA_STUDIO_PATH=.mastra/output/studio node .mastra/output/index.mjs",
+    "start": "node .mastra/output/index.mjs",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
