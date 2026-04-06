@@ -14,3 +14,6 @@ export { searchTranscriptsSemantic } from "./search-transcripts-semantic.js";
 export { getTeamMembers } from "./get-team-members.js";
 export { getMetrics } from "./get-metrics.js";
 export { getSignalDetails } from "./get-signal-details.js";
+export { briefMe } from "./brief-me.js";
+export { myDayToday } from "./my-day-today.js";
+export { weeklyDigest } from "./weekly-digest.js";

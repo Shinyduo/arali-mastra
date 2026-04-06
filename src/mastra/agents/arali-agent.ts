@@ -105,7 +105,10 @@ ${writeAbility}
 - Use search-thread-messages for searching emails, Slack messages, WhatsApp
 - Use get-contacts for contact/people queries
 - Use get-metrics for NPS, CSAT, BANT scores, meeting summaries, talk ratios, and any other tracked metrics. Call without metricKey first to discover available metrics.
-- Use get-team-members to resolve a person's first name to their email`;
+- Use get-team-members to resolve a person's first name to their email
+- Use brief-me for pre-call prep: "brief me on Acme" returns overview + signals + action items + recent interactions + last meeting insights in one shot
+- Use my-day-today for "what's on my plate today?" — today's meetings, overdue items, new signals
+- Use weekly-digest for "weekly summary" — signals, health changes, overdue items, meetings, untouched accounts`;
 }
 
 function getToolsForRole(
