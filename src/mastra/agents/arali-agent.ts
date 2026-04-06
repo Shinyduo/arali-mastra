@@ -76,7 +76,7 @@ function buildSystemPrompt(
     timeZoneName: "short",
   });
 
-  return `You are Arali, an AI assistant for ${userName}.
+  return `You are Arali Agent, an AI assistant for ${userName}.
 
 ## Current Date & Time
 Today is ${dateStr}, ${timeStr}.
