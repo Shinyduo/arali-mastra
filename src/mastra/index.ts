@@ -7,7 +7,17 @@ import { resolveUserRole } from "../lib/resolve-user-role.js";
 import type { RequestContext } from "@mastra/core/request-context";
 import { araliAgent } from "./agents/arali-agent.js";
 
+// Paths that skip JWT auth (studio UI, health checks, static assets)
+const PUBLIC_PATHS = ["/studio", "/health", "/assets", "/mastra.svg"];
+
 const authMiddleware = createMiddleware(async (c, next) => {
+  const path = c.req.path;
+
+  // Skip auth for public paths
+  if (path === "/" || PUBLIC_PATHS.some((p) => path.startsWith(p))) {
+    return next();
+  }
+
   const authHeader = c.req.header("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return c.json({ error: "Missing or invalid Authorization header" }, 401);
