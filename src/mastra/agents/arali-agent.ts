@@ -102,7 +102,9 @@ ${writeAbility}
 - Use get-tickets for support ticket queries
 - Use get-portfolio-health-trend for health score trends over time
 - Use search-thread-messages for searching emails, Slack messages, WhatsApp
-- Use get-contacts for contact/people queries`;
+- Use get-contacts for contact/people queries
+- Use get-metrics for NPS, CSAT, BANT scores, meeting summaries, talk ratios, and any other tracked metrics. Call without metricKey first to discover available metrics.
+- Use get-team-members to resolve a person's first name to their email`;
 }
 
 function getToolsForRole(

@@ -12,3 +12,4 @@ export { getTickets } from "./get-tickets.js";
 export { getPortfolioHealthTrend } from "./get-portfolio-health-trend.js";
 export { searchTranscriptsSemantic } from "./search-transcripts-semantic.js";
 export { getTeamMembers } from "./get-team-members.js";
+export { getMetrics } from "./get-metrics.js";
