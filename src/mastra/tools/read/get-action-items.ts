@@ -108,12 +108,14 @@ export const getActionItems = createTool({
       input.priority ? eq(actionItem.priority, input.priority) : undefined,
       input.ownerEmail ? eq(appUser.email, input.ownerEmail) : undefined,
       input.unassigned ? isNull(actionItem.ownerUserId) : undefined,
-      input.overdue ? lt(actionItem.dueAt, new Date()) : undefined,
+      input.overdue
+        ? sql`COALESCE(${actionItem.overdueAt}, ${actionItem.dueAt}) < NOW()`
+        : undefined,
       input.dueBefore
-        ? lte(actionItem.dueAt, new Date(input.dueBefore + "T23:59:59.999Z"))
+        ? sql`COALESCE(${actionItem.overdueAt}, ${actionItem.dueAt}) <= ${input.dueBefore + "T23:59:59.999Z"}::timestamptz`
         : undefined,
       input.dueAfter
-        ? gte(actionItem.dueAt, new Date(input.dueAfter))
+        ? sql`COALESCE(${actionItem.overdueAt}, ${actionItem.dueAt}) >= ${input.dueAfter}::timestamptz`
         : undefined,
       input.createdAfter
         ? gte(actionItem.createdAt, new Date(input.createdAfter))
@@ -144,6 +146,7 @@ export const getActionItems = createTool({
           title: actionItem.title,
           description: actionItem.description,
           priority: actionItem.priority,
+          overdueAt: actionItem.overdueAt,
           dueAt: actionItem.dueAt,
           createdAt: actionItem.createdAt,
           ownerName: appUser.name,
@@ -193,16 +196,17 @@ export const getActionItems = createTool({
     const now = new Date();
     return {
       actionItems: rows.map((r) => {
-        const isOverdue = r.dueAt ? r.dueAt < now : false;
-        const daysOverdue = isOverdue && r.dueAt
-          ? Math.floor((now.getTime() - r.dueAt.getTime()) / 86400000)
+        const effectiveDue = r.overdueAt ?? r.dueAt;
+        const isOverdue = effectiveDue ? effectiveDue < now : false;
+        const daysOverdue = isOverdue && effectiveDue
+          ? Math.floor((now.getTime() - effectiveDue.getTime()) / 86400000)
           : null;
 
         return {
           title: r.title,
           description: r.description ?? "—",
           priority: r.priority,
-          dueAt: r.dueAt?.toISOString().slice(0, 10) ?? "No due date",
+          dueAt: effectiveDue?.toISOString().slice(0, 10) ?? "No due date",
           isOverdue,
           daysOverdue,
           createdAt: r.createdAt?.toISOString().slice(0, 10) ?? "—",
