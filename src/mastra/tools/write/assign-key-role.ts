@@ -21,29 +21,19 @@ export const assignKeyRole = createTool({
     const { enterpriseId } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
-    // Fetch available role definitions: enterprise-specific override global defaults
-    const allRoles = await db
-      .select({
-        key: keyRoleDefinitions.key,
-        name: keyRoleDefinitions.name,
-        enterpriseId: keyRoleDefinitions.enterpriseId,
-      })
+    // Fetch available role definitions:
+    // If enterprise has its own → use only those. Otherwise → fall back to globals.
+    let availableRoles = await db
+      .select({ key: keyRoleDefinitions.key, name: keyRoleDefinitions.name })
       .from(keyRoleDefinitions)
-      .where(
-        or(
-          eq(keyRoleDefinitions.enterpriseId, enterpriseId),
-          isNull(keyRoleDefinitions.enterpriseId),
-        ),
-      );
+      .where(eq(keyRoleDefinitions.enterpriseId, enterpriseId));
 
-    // Dedupe: enterprise-specific wins over global
-    const roleMap = new Map<string, { key: string; name: string }>();
-    for (const r of allRoles) {
-      if (!roleMap.has(r.key) || r.enterpriseId != null) {
-        roleMap.set(r.key, { key: r.key, name: r.name });
-      }
+    if (availableRoles.length === 0) {
+      availableRoles = await db
+        .select({ key: keyRoleDefinitions.key, name: keyRoleDefinitions.name })
+        .from(keyRoleDefinitions)
+        .where(isNull(keyRoleDefinitions.enterpriseId));
     }
-    const availableRoles = Array.from(roleMap.values());
 
     if (!confirmed) {
       const validRole = availableRoles.find((r) => r.key === input.roleKey);
@@ -69,14 +59,14 @@ export const assignKeyRole = createTool({
         };
       }
 
-      // Resolve role definition ID: prefer enterprise-specific, fall back to global
-      const roleDefFull = await db.select({ id: keyRoleDefinitions.id, name: keyRoleDefinitions.name, eid: keyRoleDefinitions.enterpriseId }).from(keyRoleDefinitions)
-        .where(and(
-          or(eq(keyRoleDefinitions.enterpriseId, enterpriseId), isNull(keyRoleDefinitions.enterpriseId)),
-          eq(keyRoleDefinitions.key, input.roleKey),
-        ))
-        .orderBy(keyRoleDefinitions.enterpriseId) // non-null (enterprise-specific) sorts first
-        .limit(1);
+      // Resolve role definition ID: try enterprise-specific first, then global
+      let roleDefFull = await db.select({ id: keyRoleDefinitions.id, name: keyRoleDefinitions.name }).from(keyRoleDefinitions)
+        .where(and(eq(keyRoleDefinitions.enterpriseId, enterpriseId), eq(keyRoleDefinitions.key, input.roleKey))).limit(1);
+
+      if (!roleDefFull[0]) {
+        roleDefFull = await db.select({ id: keyRoleDefinitions.id, name: keyRoleDefinitions.name }).from(keyRoleDefinitions)
+          .where(and(isNull(keyRoleDefinitions.enterpriseId), eq(keyRoleDefinitions.key, input.roleKey))).limit(1);
+      }
 
       const newUser = await db.select({ id: appUser.id, name: appUser.name }).from(appUser)
         .where(eq(appUser.email, input.newOwnerEmail)).limit(1);
