@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const briefMe = createTool({
   id: "brief-me",
@@ -15,7 +15,7 @@ export const briefMe = createTool({
     companyName: z.string().describe("Company name"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -29,7 +29,7 @@ export const briefMe = createTool({
       LEFT JOIN stage_definition sd ON sd.id = c.stage_definition_id
       WHERE c.enterprise_id = ${enterpriseId}
         AND ${fuzzyNameMatch(sql`c.name`, input.companyName)}
-        ${userRole !== "admin" ? sql`AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}` : sql``}
+        ${!getCompanyScope(capabilities)?.enterprise ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}` : sql``}
       LIMIT 1
     `);
 

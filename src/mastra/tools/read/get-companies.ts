@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companies, appUser, stageDefinition } from "../../../db/schema.js";
 import { eq, and, gte, lte, asc, desc, sql, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getCompanies = createTool({
   id: "get-companies",
@@ -91,14 +91,14 @@ export const getCompanies = createTool({
       .describe("Offset for pagination"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
-    const scopeFilter = buildCompanyScopeFilter(
-      userRole,
+    const scopeFilter = buildKeyRoleScopeClause(
+      getCompanyScope(capabilities),
       userId,
-      orgUnitIds,
+      "company",
     );
 
     const owner = appUser;

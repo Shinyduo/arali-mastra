@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 /**
  * Build a safe Postgres array literal from a string array: '{uuid1,uuid2}'
@@ -60,7 +60,7 @@ export const getMetrics = createTool({
     limit: z.number().int().min(1).max(50).optional().default(20),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities, orgUnitIds } = extractContext(
       context.requestContext!,
     );
 
@@ -168,10 +168,10 @@ export const getMetrics = createTool({
         ${input.startDate ? sql`AND COALESCE(md.date, md.computed_at) >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND COALESCE(md.date, md.computed_at) <= ${input.endDate}::timestamptz` : sql``}
         ${
-          userRole !== "admin"
+          !getCompanyScope(capabilities)?.enterprise
             ? sql`AND (
                 c.id IS NULL OR
-                ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}
+                ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}
               )`
             : sql``
         }

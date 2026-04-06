@@ -9,7 +9,7 @@ import {
   appUser,
 } from "../../../db/schema.js";
 import { eq, and, lt, desc, count, sql } from "drizzle-orm";
-import { extractContext, buildOwnerScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildOwnerScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getActionItems = createTool({
   id: "get-action-items",
@@ -58,14 +58,13 @@ export const getActionItems = createTool({
       .describe("Offset for pagination"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
     const ownerScopeFilter = buildOwnerScopeFilter(
-      userRole,
+      getCompanyScope(capabilities),
       userId,
-      orgUnitIds,
       actionItem.ownerUserId,
     );
 

@@ -11,7 +11,7 @@ import {
   participants,
 } from "../../../db/schema.js";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const searchTranscriptsKeyword = createTool({
   id: "search-transcripts-keyword",
@@ -36,7 +36,7 @@ export const searchTranscriptsKeyword = createTool({
     limit: z.number().int().min(1).max(30).optional().default(15),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -62,10 +62,10 @@ export const searchTranscriptsKeyword = createTool({
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
         ${
-          userRole !== "admin"
+          !getCompanyScope(capabilities)?.enterprise
             ? sql`AND (
                 c.enterprise_id = ${enterpriseId}
-                AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}
+                AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}
               )`
             : sql`AND c.enterprise_id = ${enterpriseId}`
         }

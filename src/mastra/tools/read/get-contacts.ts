@@ -9,7 +9,7 @@ import {
   companies,
 } from "../../../db/schema.js";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getContacts = createTool({
   id: "get-contacts",
@@ -38,7 +38,7 @@ export const getContacts = createTool({
     offset: z.number().int().min(0).optional().default(0),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -66,10 +66,10 @@ export const getContacts = createTool({
         ${input.emailSearch ? sql`AND ce.email ILIKE ${"%" + input.emailSearch + "%"}` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${
-          userRole !== "admin"
+          !getCompanyScope(capabilities)?.enterprise
             ? sql`AND (
                 c.id IS NULL OR
-                ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}
+                ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}
               )`
             : sql``
         }

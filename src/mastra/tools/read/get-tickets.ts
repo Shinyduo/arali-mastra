@@ -8,7 +8,7 @@ import {
   companies,
 } from "../../../db/schema.js";
 import { eq, and, gte, lte, desc, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getTickets = createTool({
   id: "get-tickets",
@@ -36,17 +36,17 @@ export const getTickets = createTool({
     offset: z.number().int().min(0).optional().default(0),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
     const limit = input.limit ?? 20;
     const offset = input.offset ?? 0;
 
-    const scopeFilter = buildCompanyScopeFilter(
-      userRole,
+    const scopeFilter = buildKeyRoleScopeClause(
+      getCompanyScope(capabilities),
       userId,
-      orgUnitIds,
+      "company",
       interactionCompany.companyId,
     );
 

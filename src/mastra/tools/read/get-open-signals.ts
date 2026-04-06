@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companySignal, companies, appUser } from "../../../db/schema.js";
 import { eq, and, desc, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getOpenSignals = createTool({
   id: "get-open-signals",
@@ -41,7 +41,7 @@ export const getOpenSignals = createTool({
     offset: z.number().int().min(0).optional().default(0),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -49,10 +49,10 @@ export const getOpenSignals = createTool({
     const offset = input.offset ?? 0;
     const status = input.status ?? "open";
 
-    const scopeFilter = buildCompanyScopeFilter(
-      userRole,
+    const scopeFilter = buildKeyRoleScopeClause(
+      getCompanyScope(capabilities),
       userId,
-      orgUnitIds,
+      "company",
       companySignal.companyId,
     );
 

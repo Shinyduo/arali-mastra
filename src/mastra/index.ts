@@ -3,7 +3,7 @@ import { Mastra } from "@mastra/core/mastra";
 import { PostgresStore } from "@mastra/pg";
 import { createMiddleware } from "hono/factory";
 import { verifyJwt } from "../lib/jwt.js";
-import { resolveUserRole } from "../lib/resolve-user-role.js";
+import { getUserCapabilities, getUserOrgUnitIds } from "../lib/resolve-user-role.js";
 import type { RequestContext } from "@mastra/core/request-context";
 import { araliAgent } from "./agents/arali-agent.js";
 
@@ -34,18 +34,20 @@ const authMiddleware = createMiddleware(async (c, next) => {
       return c.json({ error: "No enterprise context in token" }, 401);
     }
 
-    const { role, orgUnitIds } = await resolveUserRole(
-      claims.sub as string,
-      enterpriseId,
-    );
+    const userId = claims.sub as string;
+
+    const [capabilities, orgUnitIds] = await Promise.all([
+      getUserCapabilities(userId, enterpriseId),
+      getUserOrgUnitIds(userId, enterpriseId),
+    ]);
 
     const requestContext = c.get("requestContext") as RequestContext;
     requestContext.set("enterpriseId", enterpriseId);
-    requestContext.set("userId", claims.sub as string);
+    requestContext.set("userId", userId);
     requestContext.set("userName", (claims.name || claims.email) as string);
     requestContext.set("userEmail", claims.email as string);
     requestContext.set("orgUnitIds", orgUnitIds);
-    requestContext.set("userRole", role);
+    requestContext.set("capabilities", capabilities);
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);
   }

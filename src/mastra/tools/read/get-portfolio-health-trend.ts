@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause } from "../../../lib/rbac.js";
 
 export const getPortfolioHealthTrend = createTool({
   id: "get-portfolio-health-trend",
@@ -31,7 +31,7 @@ export const getPortfolioHealthTrend = createTool({
       .describe("Group results by owner or stage"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -61,8 +61,8 @@ export const getPortfolioHealthTrend = createTool({
     }
 
     const rbacWhere =
-      userRole !== "admin"
-        ? sql`AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`emh.entity_id` as any) ?? sql`TRUE`}`
+      !getCompanyScope(capabilities)?.enterprise
+        ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`emh.entity_id` as any) ?? sql`TRUE`}`
         : sql``;
 
     const rows = await db.execute(sql`

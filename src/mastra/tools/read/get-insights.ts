@@ -9,7 +9,7 @@ import {
   companies,
 } from "../../../db/schema.js";
 import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getInsights = createTool({
   id: "get-insights",
@@ -42,7 +42,7 @@ export const getInsights = createTool({
     limit: z.number().int().min(1).max(100).optional().default(30),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -70,11 +70,11 @@ export const getInsights = createTool({
           )`
         : undefined,
       // RBAC: scope to companies the user can see
-      userRole !== "admin"
+      !getCompanyScope(capabilities)?.enterprise
         ? sql`EXISTS (
             SELECT 1 FROM interaction_company ic
             WHERE ic.interaction_id = ${meetingInsights.interactionId}
-              AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`ic.company_id` as any) ?? sql`TRUE`}
+              AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`ic.company_id` as any) ?? sql`TRUE`}
           )`
         : undefined,
     ].filter(Boolean);

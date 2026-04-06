@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getInteractionTimeline = createTool({
   id: "get-interaction-timeline",
@@ -38,7 +38,7 @@ export const getInteractionTimeline = createTool({
     limit: z.number().int().min(1).max(50).optional().default(20),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -79,8 +79,8 @@ export const getInteractionTimeline = createTool({
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
         ${
-          userRole !== "admin" && (input.companyName || input.companyId)
-            ? sql`AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}`
+          !getCompanyScope(capabilities)?.enterprise && (input.companyName || input.companyId)
+            ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`
             : sql``
         }
       ORDER BY i.id, i.start_at DESC NULLS LAST

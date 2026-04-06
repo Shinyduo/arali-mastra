@@ -4,7 +4,7 @@ import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
 import { openai } from "@ai-sdk/openai";
 import { embed } from "ai";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const searchTranscriptsSemantic = createTool({
   id: "search-transcripts-semantic",
@@ -32,7 +32,7 @@ export const searchTranscriptsSemantic = createTool({
     limit: z.number().int().min(1).max(20).optional().default(10),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -64,8 +64,8 @@ export const searchTranscriptsSemantic = createTool({
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
         ${
-          userRole !== "admin"
-            ? sql`AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}`
+          !getCompanyScope(capabilities)?.enterprise
+            ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`
             : sql``
         }
       ORDER BY tce.embedding <=> ${vectorStr}::vector ASC

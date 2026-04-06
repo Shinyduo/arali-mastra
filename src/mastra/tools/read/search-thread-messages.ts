@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const searchThreadMessages = createTool({
   id: "search-thread-messages",
@@ -31,7 +31,7 @@ export const searchThreadMessages = createTool({
     limit: z.number().int().min(1).max(30).optional().default(15),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
@@ -59,8 +59,8 @@ export const searchThreadMessages = createTool({
         ${input.startDate ? sql`AND tm.sent_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND tm.sent_at <= ${input.endDate}::timestamptz` : sql``}
         ${
-          userRole !== "admin"
-            ? sql`AND ${buildCompanyScopeFilter(userRole, userId, orgUnitIds, sql`c.id` as any) ?? sql`TRUE`}`
+          !getCompanyScope(capabilities)?.enterprise
+            ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`
             : sql``
         }
       ORDER BY rank DESC

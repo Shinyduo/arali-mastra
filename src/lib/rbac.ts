@@ -2,6 +2,8 @@ import { sql, type SQL } from "drizzle-orm";
 import { companies } from "../db/schema.js";
 import type { AraliRuntimeContext } from "../mastra/context/types.js";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import type { ScopedCapability, ScopedCapabilityMap } from "./resolve-user-role.js";
+import { getScopeForResource } from "./resolve-user-role.js";
 
 /**
  * Build a safe Postgres array literal from a string array: '{uuid1,uuid2}'
@@ -15,92 +17,143 @@ export function pgUuidArray(ids: string[]): ReturnType<typeof sql> {
 }
 
 /**
- * Builds a WHERE clause fragment that scopes company access by role.
- * - admin: no extra filter (just enterpriseId)
- * - rep: only companies where user has active key_role_assignment
- * - manager: companies where assigned user is in manager's org unit hierarchy
+ * Builds a WHERE clause fragment for key-role-scoped entities (companies, accounts).
+ * Mirrors arali-main's buildKeyRoleScopeClause() from authorization.ts.
+ *
+ * - enterprise scope: no filter (returns undefined)
+ * - org-unit scope: EXISTS with key_role_assignments + user_org_unit + org_unit_closure
+ * - self scope: EXISTS with key_role_assignments where user_id = current user
+ * - org-unit + self: combined with OR
+ * - no scope: returns FALSE (deny all)
  */
-export function buildCompanyScopeFilter(
-  role: AraliRuntimeContext["userRole"],
+export function buildKeyRoleScopeClause(
+  scope: ScopedCapability | undefined,
   userId: string,
-  orgUnitIds: string[],
-  companyIdColumn: PgColumn = companies.id,
+  entityType: "company" | "account",
+  entityIdColumn: PgColumn | ReturnType<typeof sql> = companies.id,
 ): SQL | undefined {
-  if (role === "admin") {
+  if (!scope) {
+    // No permission at all — deny
+    return sql`FALSE`;
+  }
+
+  if (scope.enterprise) {
+    // Enterprise-wide access — no filter needed
     return undefined;
   }
 
-  if (role === "rep") {
-    return sql`EXISTS (
-      SELECT 1 FROM key_role_assignments kra
-      WHERE kra.entity_type = 'company'
-        AND kra.entity_id = ${companyIdColumn}
-        AND kra.end_at IS NULL
-        AND kra.user_id = ${userId}
-    )`;
+  const parts: SQL[] = [];
+
+  // Org-unit scope: entities where an assigned user is in the permitted org units
+  if (scope.orgUnits.length > 0) {
+    parts.push(sql`EXISTS (
+      SELECT 1 FROM key_role_assignments kra_scope
+      JOIN user_org_unit uou_scope ON uou_scope.user_id = kra_scope.user_id
+      JOIN org_unit_closure ouc_scope ON ouc_scope.descendant_id = uou_scope.org_unit_id
+      WHERE kra_scope.entity_type = ${entityType}
+        AND kra_scope.entity_id = ${entityIdColumn}
+        AND kra_scope.end_at IS NULL
+        AND ouc_scope.ancestor_id = ANY(${pgUuidArray(scope.orgUnits)})
+    )`);
   }
 
-  // manager: companies where assigned user is in the manager's org unit hierarchy
-  if (orgUnitIds.length === 0) {
-    // manager with no org units — fall back to self scope
-    return sql`EXISTS (
-      SELECT 1 FROM key_role_assignments kra
-      WHERE kra.entity_type = 'company'
-        AND kra.entity_id = ${companyIdColumn}
-        AND kra.end_at IS NULL
-        AND kra.user_id = ${userId}
-    )`;
+  // Self scope: entities where current user is directly assigned
+  if (scope.self) {
+    parts.push(sql`EXISTS (
+      SELECT 1 FROM key_role_assignments kra_self
+      WHERE kra_self.entity_type = ${entityType}
+        AND kra_self.entity_id = ${entityIdColumn}
+        AND kra_self.end_at IS NULL
+        AND kra_self.user_id = ${userId}
+    )`);
   }
 
-  return sql`EXISTS (
-    SELECT 1 FROM key_role_assignments kra
-    JOIN user_org_unit uou ON uou.user_id = kra.user_id
-    JOIN org_unit_closure ouc ON ouc.descendant_id = uou.org_unit_id
-    WHERE kra.entity_type = 'company'
-      AND kra.entity_id = ${companyIdColumn}
-      AND kra.end_at IS NULL
-      AND ouc.ancestor_id = ANY(${pgUuidArray(orgUnitIds)})
-  )`;
+  if (parts.length === 0) {
+    return sql`FALSE`;
+  }
+
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  // Combine org-unit + self with OR
+  return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
 /**
- * Builds a WHERE clause fragment for owner-scoped entities (e.g. action items).
- * - admin: no filter
- * - rep: ownerUserId = userId
- * - manager: ownerUserId IN users within org unit hierarchy
+ * Contact scope clause — similar to company but uses slightly different end_at logic.
+ * Mirrors arali-main's buildContactScopeClause().
+ */
+export function buildContactScopeClause(
+  scope: ScopedCapability | undefined,
+  userId: string,
+  entityIdColumn: PgColumn | ReturnType<typeof sql>,
+): SQL | undefined {
+  if (!scope) return sql`FALSE`;
+  if (scope.enterprise) return undefined;
+
+  const parts: SQL[] = [];
+
+  if (scope.orgUnits.length > 0) {
+    parts.push(sql`EXISTS (
+      SELECT 1 FROM key_role_assignments kra_scope
+      JOIN user_org_unit uou_scope ON uou_scope.user_id = kra_scope.user_id
+      JOIN org_unit_closure ouc_scope ON ouc_scope.descendant_id = uou_scope.org_unit_id
+      WHERE kra_scope.entity_type IN ('contact', 'contacts')
+        AND kra_scope.entity_id = ${entityIdColumn}
+        AND (kra_scope.end_at IS NULL OR kra_scope.end_at > NOW())
+        AND ouc_scope.ancestor_id = ANY(${pgUuidArray(scope.orgUnits)})
+    )`);
+  }
+
+  if (scope.self) {
+    parts.push(sql`EXISTS (
+      SELECT 1 FROM key_role_assignments kra_self
+      WHERE kra_self.entity_type IN ('contact', 'contacts')
+        AND kra_self.entity_id = ${entityIdColumn}
+        AND (kra_self.end_at IS NULL OR kra_self.end_at > NOW())
+        AND kra_self.user_id = ${userId}
+    )`);
+  }
+
+  if (parts.length === 0) return sql`FALSE`;
+  if (parts.length === 1) return parts[0];
+  return sql`(${sql.join(parts, sql` OR `)})`;
+}
+
+/**
+ * Owner-based scope filter for entities with ownerUserId (e.g. action items).
  */
 export function buildOwnerScopeFilter(
-  role: AraliRuntimeContext["userRole"],
+  scope: ScopedCapability | undefined,
   userId: string,
-  orgUnitIds: string[],
   ownerColumn: PgColumn,
 ): SQL | undefined {
-  if (role === "admin") {
-    return undefined;
+  if (!scope) return sql`FALSE`;
+  if (scope.enterprise) return undefined;
+
+  const parts: SQL[] = [];
+
+  if (scope.orgUnits.length > 0) {
+    parts.push(sql`${ownerColumn} IN (
+      SELECT uou.user_id FROM user_org_unit uou
+      JOIN org_unit_closure ouc ON ouc.descendant_id = uou.org_unit_id
+      WHERE ouc.ancestor_id = ANY(${pgUuidArray(scope.orgUnits)})
+    )`);
   }
 
-  if (role === "rep") {
-    return sql`${ownerColumn} = ${userId}`;
+  if (scope.self) {
+    parts.push(sql`${ownerColumn} = ${userId}`);
   }
 
-  // manager
-  if (orgUnitIds.length === 0) {
-    return sql`${ownerColumn} = ${userId}`;
-  }
-
-  return sql`${ownerColumn} IN (
-    SELECT uou.user_id FROM user_org_unit uou
-    JOIN org_unit_closure ouc ON ouc.descendant_id = uou.org_unit_id
-    WHERE ouc.ancestor_id = ANY(${orgUnitIds}::uuid[])
-  )`;
+  if (parts.length === 0) return sql`FALSE`;
+  if (parts.length === 1) return parts[0];
+  return sql`(${sql.join(parts, sql` OR `)})`;
 }
 
 /**
  * Fuzzy name match: splits input into words and requires ALL words to match
- * anywhere in the name (case-insensitive). Handles "flex car" matching "Flexcar",
- * "Flexi Car", "Carflex Auto LTD", etc.
- *
- * Works with both Drizzle columns and raw SQL column references.
+ * anywhere in the name (case-insensitive).
  */
 export function fuzzyNameMatch(column: any, search: string): SQL {
   const words = search.trim().split(/\s+/).filter(Boolean);
@@ -123,6 +176,23 @@ export function extractContext(requestContext: {
     userName: requestContext.get("userName") as string,
     userEmail: requestContext.get("userEmail") as string,
     orgUnitIds: (requestContext.get("orgUnitIds") as string[]) ?? [],
-    userRole: requestContext.get("userRole") as AraliRuntimeContext["userRole"],
+    capabilities: (requestContext.get("capabilities") as ScopedCapabilityMap) ?? {},
   };
+}
+
+/**
+ * Convenience: get the company scope for a user.
+ * Companies use "meeting.read" permission (matching arali-main).
+ */
+export function getCompanyScope(capabilities: ScopedCapabilityMap): ScopedCapability | undefined {
+  return getScopeForResource(capabilities, "meeting", "read");
+}
+
+/**
+ * Convenience: check if user has write access.
+ * Write tools require "meeting.create" or similar.
+ */
+export function hasWriteAccess(capabilities: ScopedCapabilityMap): boolean {
+  const scope = getScopeForResource(capabilities, "meeting", "create");
+  return !!scope && (scope.enterprise || scope.orgUnits.length > 0 || scope.self);
 }

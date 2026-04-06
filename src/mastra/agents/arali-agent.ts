@@ -6,6 +6,8 @@ import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 import type { AraliRuntimeContext } from "../context/types.js";
 import type { Tool } from "@mastra/core/tools";
+import type { ScopedCapabilityMap } from "../../lib/resolve-user-role.js";
+import { hasWriteAccess, getCompanyScope } from "../../lib/rbac.js";
 
 function getModel() {
   const provider = process.env.AI_PROVIDER ?? "anthropic";
@@ -27,23 +29,37 @@ import * as readTools from "../tools/read/index.js";
 // --- Write tools ---
 import * as writeTools from "../tools/write/index.js";
 
+function describeScope(capabilities: ScopedCapabilityMap): string {
+  const scope = getCompanyScope(capabilities);
+  if (!scope) {
+    return "You have no access to company data. You can only answer general questions.";
+  }
+  if (scope.enterprise) {
+    return "You have full access to all data across the entire organization.";
+  }
+  const parts: string[] = [];
+  if (scope.orgUnits.length > 0) {
+    parts.push("data within your org unit(s) and their sub-units");
+  }
+  if (scope.self) {
+    parts.push("companies and entities directly assigned to you");
+  }
+  if (parts.length === 0) {
+    return "You have limited access. Some queries may return empty results.";
+  }
+  return `You can see ${parts.join(", and ")}.`;
+}
+
 function buildSystemPrompt(
   userName: string,
-  role: AraliRuntimeContext["userRole"],
+  capabilities: ScopedCapabilityMap,
 ): string {
-  const scopeDescription = {
-    admin:
-      "You have full access to all data across the entire organization.",
-    manager:
-      "You can see data for all companies and team members within your org unit(s) and their sub-units.",
-    rep:
-      "You can see data only for companies and items assigned to you.",
-  }[role];
+  const scopeDescription = describeScope(capabilities);
+  const canWrite = hasWriteAccess(capabilities);
 
-  const writeAbility =
-    role === "rep"
-      ? "You do NOT have permission to create or modify records. If the user asks you to create or change something, let them know they need a manager or admin role."
-      : "You can create and modify records (action items, signals, company stages, key roles, notes). Always confirm with the user before making any changes — describe exactly what will be created or changed and ask for explicit approval.";
+  const writeAbility = canWrite
+    ? "You can create and modify records (action items, signals, company stages, key roles, notes). Always confirm with the user before making any changes — describe exactly what will be created or changed and ask for explicit approval."
+    : "You do NOT have permission to create or modify records. If the user asks you to create or change something, let them know they need the appropriate permissions.";
 
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", {
@@ -60,7 +76,7 @@ function buildSystemPrompt(
     timeZoneName: "short",
   });
 
-  return `You are Arali, an AI assistant for ${userName} (${role}).
+  return `You are Arali, an AI assistant for ${userName}.
 
 ## Current Date & Time
 Today is ${dateStr}, ${timeStr}.
@@ -111,18 +127,20 @@ ${writeAbility}
 - Use weekly-digest for "weekly summary" — signals, health changes, overdue items, meetings, untouched accounts`;
 }
 
-function getToolsForRole(
-  role: AraliRuntimeContext["userRole"],
+function getToolsForCapabilities(
+  capabilities: ScopedCapabilityMap,
 ): Record<string, Tool<any, any>> {
   const tools: Record<string, Tool<any, any>> = {};
 
+  // Read tools — always available (RBAC is enforced inside each tool)
   for (const [key, tool] of Object.entries(readTools)) {
     if (tool && typeof tool === "object" && "id" in tool) {
       tools[key] = tool as Tool<any, any>;
     }
   }
 
-  if (role === "admin" || role === "manager") {
+  // Write tools — only if user has write access
+  if (hasWriteAccess(capabilities)) {
     for (const [key, tool] of Object.entries(writeTools)) {
       if (tool && typeof tool === "object" && "id" in tool) {
         tools[key] = tool as Tool<any, any>;
@@ -153,13 +171,13 @@ export const araliAgent = new Agent({
   }),
 
   instructions: ({ requestContext }) => {
-    const role = requestContext.get("userRole") as AraliRuntimeContext["userRole"];
+    const capabilities = (requestContext.get("capabilities") as ScopedCapabilityMap) ?? {};
     const userName = requestContext.get("userName") as string;
-    return buildSystemPrompt(userName || "User", role || "rep");
+    return buildSystemPrompt(userName || "User", capabilities);
   },
 
   tools: ({ requestContext }) => {
-    const role = requestContext.get("userRole") as AraliRuntimeContext["userRole"];
-    return getToolsForRole(role || "rep");
+    const capabilities = (requestContext.get("capabilities") as ScopedCapabilityMap) ?? {};
+    return getToolsForCapabilities(capabilities);
   },
 });

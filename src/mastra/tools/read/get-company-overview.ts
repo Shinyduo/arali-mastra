@@ -12,7 +12,7 @@ import {
   entityMetricHistory,
 } from "../../../db/schema.js";
 import { eq, and, isNull, desc, sql, count, inArray } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getCompanyOverview = createTool({
   id: "get-company-overview",
@@ -32,12 +32,12 @@ export const getCompanyOverview = createTool({
       message: "Either companyName or companyId is required",
     }),
   execute: async (input, context) => {
-    const { enterpriseId, userId, userRole, orgUnitIds } = extractContext(
+    const { enterpriseId, userId, capabilities } = extractContext(
       context.requestContext!,
     );
 
     // Step 1: Resolve the company
-    const scopeFilter = buildCompanyScopeFilter(userRole, userId, orgUnitIds);
+    const scopeFilter = buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company");
 
     const companyConditions = [
       eq(companies.enterpriseId, enterpriseId),
