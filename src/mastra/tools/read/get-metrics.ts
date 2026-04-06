@@ -8,9 +8,10 @@ export const getMetrics = createTool({
   id: "get-metrics",
   description:
     "Query metric scores and data (NPS, CSAT, BANT, meeting summaries, talk ratio, etc.) from the metrics system. " +
-    "Metrics are stored per-meeting or per-user-daily. Each metric has a key (e.g. 'nps', 'csat', 'bant', " +
-    "'meeting_summary', 'talk_ratio'). Use metricKey to filter by specific metric, or leave empty to see " +
-    "all available metrics. Can filter by company, meeting, date range, or user. " +
+    "Metrics are stored per-meeting or per-user-daily. Each metric has a key (e.g. 'nps_inferred', 'csat', 'bant', " +
+    "'meeting_summary', 'talk_ratio', 'action_items', 'churn_threats'). " +
+    "Use metricKey to filter by specific metric, or leave empty to see all available metrics. " +
+    "Can filter by company, meeting, date range, or user. " +
     "Use this for 'What was the NPS score in last meeting with Acme?', 'Show me BANT scores', " +
     "'Meeting summary for Company X', or 'What metrics do we track?'.",
   inputSchema: z.object({
@@ -18,7 +19,7 @@ export const getMetrics = createTool({
       .string()
       .optional()
       .describe(
-        "Metric key to filter (e.g. 'nps', 'csat', 'bant', 'meeting_summary', 'talk_ratio'). " +
+        "Metric key to filter (e.g. 'nps_inferred', 'csat', 'bant', 'meeting_summary', 'talk_ratio'). " +
         "Leave empty to list available metrics.",
       ),
     companyName: z
@@ -53,14 +54,38 @@ export const getMetrics = createTool({
     );
 
     const limit = input.limit ?? 20;
+    const orgUnitArray = orgUnitIds.length > 0 ? orgUnitIds : [];
 
     // If no metricKey, list available metrics definitions
+    // Uses hierarchical override: org_unit > enterprise > global
     if (!input.metricKey && !input.companyName && !input.meetingTitle) {
       const defs = await db.execute(sql`
-        SELECT m.key, m.name, m.description, m.data_type, m.unit, m.scope_kind, m.higher_is_better
-        FROM metrics m
-        WHERE m.enterprise_id = ${enterpriseId}
-        ORDER BY m.name
+        WITH ranked_metrics AS (
+          SELECT
+            m.key,
+            m.name,
+            m.description,
+            m.data_type,
+            m.unit,
+            m.scope_kind,
+            m.higher_is_better,
+            CASE
+              WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]) THEN 1
+              WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL THEN 2
+              WHEN m.enterprise_id IS NULL AND m.org_unit_id IS NULL THEN 3
+              ELSE 4
+            END AS priority
+          FROM metrics m
+          WHERE (
+            (m.enterprise_id IS NULL AND m.org_unit_id IS NULL)
+            OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL)
+            OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]))
+          )
+        )
+        SELECT DISTINCT ON (key) key, name, description, data_type, unit, scope_kind, higher_is_better
+        FROM ranked_metrics
+        WHERE priority < 4
+        ORDER BY key, priority ASC
       `);
 
       return {
@@ -77,13 +102,35 @@ export const getMetrics = createTool({
       };
     }
 
-    // Query metric values with joins
+    // Query metric values — join metrics with hierarchical override to resolve the right metric ID
     const rows = await db.execute(sql`
+      WITH effective_metrics AS (
+        SELECT DISTINCT ON (m.key)
+          m.id,
+          m.key,
+          m.name,
+          m.data_type,
+          m.unit,
+          CASE
+            WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]) THEN 1
+            WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL THEN 2
+            WHEN m.enterprise_id IS NULL AND m.org_unit_id IS NULL THEN 3
+            ELSE 4
+          END AS priority
+        FROM metrics m
+        WHERE (
+          (m.enterprise_id IS NULL AND m.org_unit_id IS NULL)
+          OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL)
+          OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]))
+        )
+        ${input.metricKey ? sql`AND m.key = ${input.metricKey}` : sql``}
+        ORDER BY m.key, priority ASC
+      )
       SELECT
-        m.key AS metric_key,
-        m.name AS metric_name,
-        m.data_type,
-        m.unit,
+        em.key AS metric_key,
+        em.name AS metric_name,
+        em.data_type,
+        em.unit,
         md.value_number,
         md.value_text,
         md.value_json,
@@ -97,13 +144,12 @@ export const getMetrics = createTool({
         au.name AS user_name,
         au.email AS user_email
       FROM metrics_data md
-      JOIN metrics m ON m.id = md.metric_id
+      JOIN effective_metrics em ON em.id = md.metric_id
       LEFT JOIN interactions i ON i.id = md.interaction_id
       LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
       LEFT JOIN companies c ON c.id = ic.company_id
       LEFT JOIN app_user au ON au.id = md.user_id
       WHERE md.enterprise_id = ${enterpriseId}
-        ${input.metricKey ? sql`AND m.key = ${input.metricKey}` : sql``}
         ${input.grain ? sql`AND md.grain = ${input.grain}` : sql``}
         ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
         ${input.meetingTitle ? sql`AND i.title ILIKE ${"%" + input.meetingTitle + "%"}` : sql``}
@@ -124,7 +170,6 @@ export const getMetrics = createTool({
 
     return {
       metrics: (rows as any[]).map((r: any) => {
-        // Pick the right value based on data type
         const value =
           r.value_json != null
             ? r.value_json
