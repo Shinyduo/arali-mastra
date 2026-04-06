@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
+import { openai } from "@ai-sdk/openai";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 import type { AraliRuntimeContext } from "../context/types.js";
@@ -8,10 +9,17 @@ import type { Tool } from "@mastra/core/tools";
 
 function getModel() {
   const provider = process.env.AI_PROVIDER ?? "anthropic";
-  if (provider === "google") {
-    return google(process.env.GOOGLE_MODEL ?? "gemini-2.5-flash");
+  const model = process.env.AI_MODEL;
+
+  switch (provider) {
+    case "google":
+      return google(model ?? "gemini-2.5-flash");
+    case "openai":
+      return openai(model ?? "gpt-4o");
+    case "anthropic":
+    default:
+      return anthropic(model ?? "claude-sonnet-4-20250514");
   }
-  return anthropic(process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514");
 }
 
 // --- Read tools ---
