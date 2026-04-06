@@ -16,73 +16,60 @@ export const updateCompanyStage = createTool({
       .string()
       .describe("Target stage key (e.g. 'onboarding', 'active', 'churned')"),
   }),
-  suspendSchema: z.object({
-    action: z.literal("update-company-stage"),
-    summary: z.string(),
-  }),
-  resumeSchema: z.object({ approved: z.boolean() }),
   execute: async (input, context) => {
     const { enterpriseId } = extractContext(context.requestContext!);
 
-    if (context.agent?.resumeData) {
-      const resume = context.agent.resumeData as { approved: boolean };
-      if (!resume.approved) {
-        return { success: false, message: "Stage update cancelled." };
-      }
+    if (context.agent?.resumeData != null) {
+      try {
+        const matched = await db
+          .select({ id: companies.id, name: companies.name })
+          .from(companies)
+          .where(
+            and(
+              eq(companies.enterpriseId, enterpriseId),
+              ilike(companies.name, `%${input.companyName}%`),
+            ),
+          )
+          .limit(1);
 
-      // Find the company
-      const matched = await db
-        .select({ id: companies.id, name: companies.name })
-        .from(companies)
-        .where(
-          and(
-            eq(companies.enterpriseId, enterpriseId),
-            ilike(companies.name, `%${input.companyName}%`),
-          ),
-        )
-        .limit(1);
+        if (!matched[0]) {
+          return { success: false, message: `Company "${input.companyName}" not found.` };
+        }
 
-      if (!matched[0]) {
-        return { success: false, message: `Company "${input.companyName}" not found.` };
-      }
+        const stage = await db
+          .select({ id: stageDefinition.id, name: stageDefinition.name })
+          .from(stageDefinition)
+          .where(
+            and(
+              eq(stageDefinition.enterpriseId, enterpriseId),
+              eq(stageDefinition.scope, "company"),
+              eq(stageDefinition.key, input.targetStageKey),
+              eq(stageDefinition.isActive, true),
+            ),
+          )
+          .limit(1);
 
-      // Validate stage exists for scope=company
-      const stage = await db
-        .select({ id: stageDefinition.id, name: stageDefinition.name })
-        .from(stageDefinition)
-        .where(
-          and(
-            eq(stageDefinition.enterpriseId, enterpriseId),
-            eq(stageDefinition.scope, "company"),
-            eq(stageDefinition.key, input.targetStageKey),
-            eq(stageDefinition.isActive, true),
-          ),
-        )
-        .limit(1);
+        if (!stage[0]) {
+          return { success: false, message: `Stage "${input.targetStageKey}" not found.` };
+        }
 
-      if (!stage[0]) {
+        await db
+          .update(companies)
+          .set({ stageDefinitionId: stage[0].id, updatedAt: new Date() })
+          .where(eq(companies.id, matched[0].id));
+
         return {
-          success: false,
-          message: `Stage "${input.targetStageKey}" not found. Check the stage key.`,
+          success: true,
+          message: `${matched[0].name} moved to stage "${stage[0].name}".`,
         };
+      } catch (err: any) {
+        return { success: false, message: `Failed: ${err.message}` };
       }
-
-      await db
-        .update(companies)
-        .set({ stageDefinitionId: stage[0].id, updatedAt: new Date() })
-        .where(eq(companies.id, matched[0].id));
-
-      return {
-        success: true,
-        message: `${matched[0].name} moved to stage "${stage[0].name}".`,
-      };
     }
 
     await context.agent?.suspend({
       action: "update-company-stage",
       summary: `Move "${input.companyName}" to stage "${input.targetStageKey}"`,
     });
-
-    return { success: false, message: "Awaiting confirmation." };
   },
 });

@@ -20,86 +20,79 @@ export const createEntityNote = createTool({
     title: z.string().optional().describe("Note title"),
     content: z.string().describe("Note content"),
   }),
-  suspendSchema: z.object({
-    action: z.literal("create-entity-note"),
-    summary: z.string(),
-  }),
-  resumeSchema: z.object({ approved: z.boolean() }),
   execute: async (input, context) => {
     const { enterpriseId, userId } = extractContext(context.requestContext!);
 
-    if (context.agent?.resumeData) {
-      const resume = context.agent.resumeData as { approved: boolean };
-      if (!resume.approved) {
-        return { success: false, message: "Note creation cancelled." };
-      }
+    if (context.agent?.resumeData != null) {
+      try {
+        let entityId: string | null = null;
+        let resolvedName = "";
 
-      // Resolve entity ID
-      let entityId: string | null = null;
-      let resolvedName = "";
+        if (input.entityType === "company") {
+          const match = await db
+            .select({ id: companies.id, name: companies.name })
+            .from(companies)
+            .where(
+              and(
+                eq(companies.enterpriseId, enterpriseId),
+                ilike(companies.name, `%${input.entityName}%`),
+              ),
+            )
+            .limit(1);
+          entityId = match[0]?.id ?? null;
+          resolvedName = match[0]?.name ?? "";
+        } else if (input.entityType === "contact") {
+          const match = await db
+            .select({ id: contacts.id, name: contacts.fullName })
+            .from(contacts)
+            .where(
+              and(
+                eq(contacts.enterpriseId, enterpriseId),
+                ilike(contacts.fullName, `%${input.entityName}%`),
+              ),
+            )
+            .limit(1);
+          entityId = match[0]?.id ?? null;
+          resolvedName = match[0]?.name ?? "";
+        } else if (input.entityType === "account") {
+          const match = await db
+            .select({ id: accounts.id, name: accounts.name })
+            .from(accounts)
+            .where(
+              and(
+                eq(accounts.enterpriseId, enterpriseId),
+                ilike(accounts.name, `%${input.entityName}%`),
+              ),
+            )
+            .limit(1);
+          entityId = match[0]?.id ?? null;
+          resolvedName = match[0]?.name ?? "";
+        }
 
-      if (input.entityType === "company") {
-        const match = await db
-          .select({ id: companies.id, name: companies.name })
-          .from(companies)
-          .where(
-            and(
-              eq(companies.enterpriseId, enterpriseId),
-              ilike(companies.name, `%${input.entityName}%`),
-            ),
-          )
-          .limit(1);
-        entityId = match[0]?.id ?? null;
-        resolvedName = match[0]?.name ?? "";
-      } else if (input.entityType === "contact") {
-        const match = await db
-          .select({ id: contacts.id, name: contacts.fullName })
-          .from(contacts)
-          .where(
-            and(
-              eq(contacts.enterpriseId, enterpriseId),
-              ilike(contacts.fullName, `%${input.entityName}%`),
-            ),
-          )
-          .limit(1);
-        entityId = match[0]?.id ?? null;
-        resolvedName = match[0]?.name ?? "";
-      } else if (input.entityType === "account") {
-        const match = await db
-          .select({ id: accounts.id, name: accounts.name })
-          .from(accounts)
-          .where(
-            and(
-              eq(accounts.enterpriseId, enterpriseId),
-              ilike(accounts.name, `%${input.entityName}%`),
-            ),
-          )
-          .limit(1);
-        entityId = match[0]?.id ?? null;
-        resolvedName = match[0]?.name ?? "";
-      }
+        if (!entityId) {
+          return {
+            success: false,
+            message: `No ${input.entityType} found matching "${input.entityName}".`,
+          };
+        }
 
-      if (!entityId) {
+        await db.insert(entityNotes).values({
+          enterpriseId,
+          entityType: input.entityType,
+          entityId,
+          title: input.title ?? null,
+          content: input.content,
+          createdByUserId: userId,
+          updatedByUserId: userId,
+        });
+
         return {
-          success: false,
-          message: `No ${input.entityType} found matching "${input.entityName}".`,
+          success: true,
+          message: `Note added to ${input.entityType} "${resolvedName}".`,
         };
+      } catch (err: any) {
+        return { success: false, message: `Failed: ${err.message}` };
       }
-
-      await db.insert(entityNotes).values({
-        enterpriseId,
-        entityType: input.entityType,
-        entityId,
-        title: input.title ?? null,
-        content: input.content,
-        createdByUserId: userId,
-        updatedByUserId: userId,
-      });
-
-      return {
-        success: true,
-        message: `Note added to ${input.entityType} "${resolvedName}".`,
-      };
     }
 
     const summary = [
@@ -114,7 +107,5 @@ export const createEntityNote = createTool({
       action: "create-entity-note",
       summary: `Create note:\n${summary}`,
     });
-
-    return { success: false, message: "Awaiting confirmation." };
   },
 });
