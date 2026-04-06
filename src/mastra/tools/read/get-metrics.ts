@@ -4,6 +4,17 @@ import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
 import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
+/**
+ * Build a safe Postgres array literal from a string array: '{uuid1,uuid2}'
+ * Returns '{}' for empty arrays so ANY() returns false.
+ */
+function pgUuidArray(ids: string[]): ReturnType<typeof sql> {
+  if (ids.length === 0) return sql`'{}'::uuid[]`;
+  // Validate UUIDs to prevent injection
+  const safe = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  return sql.raw(`'{${safe.join(",")}}'::uuid[]`);
+}
+
 export const getMetrics = createTool({
   id: "get-metrics",
   description:
@@ -54,7 +65,7 @@ export const getMetrics = createTool({
     );
 
     const limit = input.limit ?? 20;
-    const orgUnitArray = orgUnitIds.length > 0 ? orgUnitIds : [];
+    const ouArray = pgUuidArray(orgUnitIds);
 
     // If no metricKey, list available metrics definitions
     // Uses hierarchical override: org_unit > enterprise > global
@@ -70,7 +81,7 @@ export const getMetrics = createTool({
             m.scope_kind,
             m.higher_is_better,
             CASE
-              WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]) THEN 1
+              WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${ouArray}) THEN 1
               WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL THEN 2
               WHEN m.enterprise_id IS NULL AND m.org_unit_id IS NULL THEN 3
               ELSE 4
@@ -79,7 +90,7 @@ export const getMetrics = createTool({
           WHERE (
             (m.enterprise_id IS NULL AND m.org_unit_id IS NULL)
             OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL)
-            OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]))
+            OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${ouArray}))
           )
         )
         SELECT DISTINCT ON (key) key, name, description, data_type, unit, scope_kind, higher_is_better
@@ -112,7 +123,7 @@ export const getMetrics = createTool({
           m.data_type,
           m.unit,
           CASE
-            WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]) THEN 1
+            WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${ouArray}) THEN 1
             WHEN m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL THEN 2
             WHEN m.enterprise_id IS NULL AND m.org_unit_id IS NULL THEN 3
             ELSE 4
@@ -121,7 +132,7 @@ export const getMetrics = createTool({
         WHERE (
           (m.enterprise_id IS NULL AND m.org_unit_id IS NULL)
           OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id IS NULL)
-          OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${orgUnitArray}::uuid[]))
+          OR (m.enterprise_id = ${enterpriseId} AND m.org_unit_id = ANY(${ouArray}))
         )
         ${input.metricKey ? sql`AND m.key = ${input.metricKey}` : sql``}
         ORDER BY m.key, priority ASC

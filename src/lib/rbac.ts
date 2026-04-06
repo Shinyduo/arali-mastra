@@ -4,6 +4,17 @@ import type { AraliRuntimeContext } from "../mastra/context/types.js";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
 /**
+ * Build a safe Postgres array literal from a string array: '{uuid1,uuid2}'
+ * Returns '{}' for empty arrays so ANY() returns false.
+ */
+export function pgUuidArray(ids: string[]): ReturnType<typeof sql> {
+  if (ids.length === 0) return sql`'{}'::uuid[]`;
+  const safe = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (safe.length === 0) return sql`'{}'::uuid[]`;
+  return sql.raw(`'{${safe.join(",")}}'::uuid[]`);
+}
+
+/**
  * Builds a WHERE clause fragment that scopes company access by role.
  * - admin: no extra filter (just enterpriseId)
  * - rep: only companies where user has active key_role_assignment
@@ -48,7 +59,7 @@ export function buildCompanyScopeFilter(
     WHERE kra.entity_type = 'company'
       AND kra.entity_id = ${companyIdColumn}
       AND kra.end_at IS NULL
-      AND ouc.ancestor_id = ANY(${orgUnitIds}::uuid[])
+      AND ouc.ancestor_id = ANY(${pgUuidArray(orgUnitIds)})
   )`;
 }
 
