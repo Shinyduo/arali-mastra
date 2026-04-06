@@ -8,6 +8,9 @@ const server = new MastraServer({ app, mastra });
 
 await server.registerRoutes();
 
+app.get("/", (c) => c.json({ status: "ok", service: "arali-mastra" }));
+app.get("/health", (c) => c.json({ status: "ok" }));
+
 const port = Number(process.env.PORT) || 4111;
 
 serve({ fetch: app.fetch, port }, (info) => {
