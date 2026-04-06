@@ -45,7 +45,10 @@ const authMiddleware = createMiddleware(async (c, next) => {
 
 export const mastra = new Mastra({
   agents: { araliAgent },
-  storage: new PostgresStore({ id: "arali-mastra", connectionString: process.env.DATABASE_URL! }),
+  storage: new PostgresStore({
+    id: "arali-mastra",
+    connectionString: process.env.MASTRA_DATABASE_URL || process.env.DATABASE_URL!,
+  }),
   server: {
     port: Number(process.env.PORT) || 4111,
     middleware: [authMiddleware],
