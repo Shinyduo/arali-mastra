@@ -9,7 +9,7 @@ import {
   companies,
 } from "../../../db/schema.js";
 import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getInsights = createTool({
   id: "get-insights",
@@ -66,7 +66,7 @@ export const getInsights = createTool({
             SELECT 1 FROM interaction_company ic
             JOIN companies c ON c.id = ic.company_id
             WHERE ic.interaction_id = ${meetingInsights.interactionId}
-              AND c.name ILIKE ${"%" + input.companyName + "%"}
+              AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}
           )`
         : undefined,
       // RBAC: scope to companies the user can see

@@ -2,8 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companySignal, companies, appUser } from "../../../db/schema.js";
-import { eq, and, ilike, desc, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, desc, count } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getOpenSignals = createTool({
   id: "get-open-signals",
@@ -68,7 +68,7 @@ export const getOpenSignals = createTool({
         ? eq(companySignal.categoryKey, input.categoryKey)
         : undefined,
       input.companyName
-        ? ilike(companies.name, `%${input.companyName}%`)
+        ? fuzzyNameMatch(companies.name, input.companyName!)
         : undefined,
       input.ownerEmail ? eq(appUser.email, input.ownerEmail) : undefined,
     ].filter(Boolean);

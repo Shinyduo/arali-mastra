@@ -10,7 +10,7 @@ import {
   actionItemsPipeline,
 } from "../../../db/schema.js";
 import { eq, and, asc, ilike } from "drizzle-orm";
-import { extractContext } from "../../../lib/rbac.js";
+import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const createActionItem = createTool({
   id: "create-action-item",
@@ -155,7 +155,7 @@ export const createActionItem = createTool({
           .where(
             and(
               eq(companies.enterpriseId, enterpriseId),
-              ilike(companies.name, `%${input.companyName}%`),
+              fuzzyNameMatch(companies.name, input.companyName!),
             ),
           )
           .limit(1);

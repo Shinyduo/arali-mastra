@@ -7,8 +7,8 @@ import {
   billingInvoice,
   companies,
 } from "../../../db/schema.js";
-import { eq, and, ilike, desc, sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getBillingOverview = createTool({
   id: "get-billing-overview",
@@ -39,7 +39,7 @@ export const getBillingOverview = createTool({
       scopeFilter,
       input.companyId
         ? eq(companies.id, input.companyId)
-        : ilike(companies.name, `%${input.companyName}%`),
+        : fuzzyNameMatch(companies.name, input.companyName!),
     ].filter(Boolean);
 
     const matched = await db

@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getMetrics = createTool({
   id: "get-metrics",
@@ -151,7 +151,7 @@ export const getMetrics = createTool({
       LEFT JOIN app_user au ON au.id = md.user_id
       WHERE md.enterprise_id = ${enterpriseId}
         ${input.grain ? sql`AND md.grain = ${input.grain}` : sql``}
-        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.meetingTitle ? sql`AND i.title ILIKE ${"%" + input.meetingTitle + "%"}` : sql``}
         ${input.userEmail ? sql`AND au.email = ${input.userEmail}` : sql``}
         ${input.startDate ? sql`AND COALESCE(md.date, md.computed_at) >= ${input.startDate}::timestamptz` : sql``}

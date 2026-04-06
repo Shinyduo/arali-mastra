@@ -4,7 +4,7 @@ import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
 import { openai } from "@ai-sdk/openai";
 import { embed } from "ai";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const searchTranscriptsSemantic = createTool({
   id: "search-transcripts-semantic",
@@ -60,7 +60,7 @@ export const searchTranscriptsSemantic = createTool({
       LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
       LEFT JOIN companies c ON c.id = ic.company_id
       WHERE c.enterprise_id = ${enterpriseId}
-        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
         ${

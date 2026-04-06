@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const searchThreadMessages = createTool({
   id: "search-thread-messages",
@@ -55,7 +55,7 @@ export const searchThreadMessages = createTool({
       WHERE tm.search_vector @@ plainto_tsquery('english', ${input.query})
         AND tm.enterprise_id = ${enterpriseId}
         ${input.channel ? sql`AND th.channel = ${input.channel}` : sql``}
-        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.startDate ? sql`AND tm.sent_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND tm.sent_at <= ${input.endDate}::timestamptz` : sql``}
         ${

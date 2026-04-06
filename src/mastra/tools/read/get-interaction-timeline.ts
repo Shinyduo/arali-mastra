@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getInteractionTimeline = createTool({
   id: "get-interaction-timeline",
@@ -68,7 +68,7 @@ export const getInteractionTimeline = createTool({
           : sql`AND FALSE`}
       WHERE TRUE
         ${input.companyId ? sql`AND c.id = ${input.companyId}::uuid` : sql``}
-        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.userEmail
           ? sql`AND p_user.id IS NOT NULL`
           : sql`AND ic.enterprise_id = ${enterpriseId}`}

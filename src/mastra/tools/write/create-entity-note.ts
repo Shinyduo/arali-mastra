@@ -2,8 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { entityNotes, companies, contacts, accounts } from "../../../db/schema.js";
-import { eq, and, ilike } from "drizzle-orm";
-import { extractContext } from "../../../lib/rbac.js";
+import { eq, and } from "drizzle-orm";
+import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const createEntityNote = createTool({
   id: "create-entity-note",
@@ -34,15 +34,15 @@ export const createEntityNote = createTool({
 
       if (input.entityType === "company") {
         const m = await db.select({ id: companies.id, name: companies.name }).from(companies)
-          .where(and(eq(companies.enterpriseId, enterpriseId), ilike(companies.name, `%${input.entityName}%`))).limit(1);
+          .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.entityName))).limit(1);
         entityId = m[0]?.id ?? null; resolvedName = m[0]?.name ?? "";
       } else if (input.entityType === "contact") {
         const m = await db.select({ id: contacts.id, name: contacts.fullName }).from(contacts)
-          .where(and(eq(contacts.enterpriseId, enterpriseId), ilike(contacts.fullName, `%${input.entityName}%`))).limit(1);
+          .where(and(eq(contacts.enterpriseId, enterpriseId), fuzzyNameMatch(contacts.fullName, input.entityName))).limit(1);
         entityId = m[0]?.id ?? null; resolvedName = m[0]?.name ?? "";
       } else if (input.entityType === "account") {
         const m = await db.select({ id: accounts.id, name: accounts.name }).from(accounts)
-          .where(and(eq(accounts.enterpriseId, enterpriseId), ilike(accounts.name, `%${input.entityName}%`))).limit(1);
+          .where(and(eq(accounts.enterpriseId, enterpriseId), fuzzyNameMatch(accounts.name, input.entityName))).limit(1);
         entityId = m[0]?.id ?? null; resolvedName = m[0]?.name ?? "";
       }
 

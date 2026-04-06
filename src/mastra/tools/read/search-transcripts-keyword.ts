@@ -11,7 +11,7 @@ import {
   participants,
 } from "../../../db/schema.js";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const searchTranscriptsKeyword = createTool({
   id: "search-transcripts-keyword",
@@ -58,7 +58,7 @@ export const searchTranscriptsKeyword = createTool({
       LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
       LEFT JOIN companies c ON c.id = ic.company_id
       WHERE t.search_vector @@ plainto_tsquery('english', ${input.query})
-        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
         ${

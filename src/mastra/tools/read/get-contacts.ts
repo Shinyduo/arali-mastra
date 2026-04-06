@@ -8,8 +8,8 @@ import {
   customerCompany,
   companies,
 } from "../../../db/schema.js";
-import { eq, and, ilike, sql, desc } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, sql, desc } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getContacts = createTool({
   id: "get-contacts",
@@ -64,7 +64,7 @@ export const getContacts = createTool({
         ${input.nameSearch ? sql`AND ct.full_name ILIKE ${"%" + input.nameSearch + "%"}` : sql``}
         ${input.titleSearch ? sql`AND ct.title ILIKE ${"%" + input.titleSearch + "%"}` : sql``}
         ${input.emailSearch ? sql`AND ce.email ILIKE ${"%" + input.emailSearch + "%"}` : sql``}
-        ${input.companyName ? sql`AND c.name ILIKE ${"%" + input.companyName + "%"}` : sql``}
+        ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${
           userRole !== "admin"
             ? sql`AND (

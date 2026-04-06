@@ -2,8 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companies, appUser, stageDefinition } from "../../../db/schema.js";
-import { eq, and, gte, lte, ilike, asc, desc, sql, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, gte, lte, asc, desc, sql, count } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getCompanies = createTool({
   id: "get-companies",
@@ -183,7 +183,7 @@ export const getCompanies = createTool({
       input.ownerEmail ? eq(owner.email, input.ownerEmail) : undefined,
       input.domain ? eq(companies.domain, input.domain) : undefined,
       input.search
-        ? ilike(companies.name, `%${input.search}%`)
+        ? fuzzyNameMatch(companies.name, input.search)
         : undefined,
       ...customFieldConditions,
     ].filter(Boolean);

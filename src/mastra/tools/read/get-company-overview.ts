@@ -11,8 +11,8 @@ import {
   keyRoleDefinitions,
   entityMetricHistory,
 } from "../../../db/schema.js";
-import { eq, and, ilike, isNull, desc, sql, count, inArray } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, isNull, desc, sql, count, inArray } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getCompanyOverview = createTool({
   id: "get-company-overview",
@@ -45,7 +45,7 @@ export const getCompanyOverview = createTool({
       input.companyId
         ? eq(companies.id, input.companyId)
         : input.companyName
-          ? ilike(companies.name, `%${input.companyName}%`)
+          ? fuzzyNameMatch(companies.name, input.companyName!)
           : undefined,
     ].filter(Boolean);
 

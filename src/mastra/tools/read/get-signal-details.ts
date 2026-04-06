@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getSignalDetails = createTool({
   id: "get-signal-details",
@@ -51,7 +51,7 @@ export const getSignalDetails = createTool({
       FROM company_signal cs
       JOIN companies c ON c.id = cs.company_id
       WHERE cs.enterprise_id = ${enterpriseId}
-        AND c.name ILIKE ${"%" + input.companyName + "%"}
+        AND ${fuzzyNameMatch(sql`c.name`, input.companyName)}
         ${input.signalTitle ? sql`AND cs.title ILIKE ${"%" + input.signalTitle + "%"}` : sql``}
         ${input.categoryKey ? sql`AND cs.category_key = ${input.categoryKey}` : sql``}
         ${

@@ -2,8 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companies, stageDefinition } from "../../../db/schema.js";
-import { eq, and, ilike } from "drizzle-orm";
-import { extractContext } from "../../../lib/rbac.js";
+import { eq, and } from "drizzle-orm";
+import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const updateCompanyStage = createTool({
   id: "update-company-stage",
@@ -27,7 +27,7 @@ export const updateCompanyStage = createTool({
       const matched = await db
         .select({ id: companies.id, name: companies.name })
         .from(companies)
-        .where(and(eq(companies.enterpriseId, enterpriseId), ilike(companies.name, `%${input.companyName}%`)))
+        .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName)))
         .limit(1);
 
       if (!matched[0]) return { success: false, message: `Company "${input.companyName}" not found.` };

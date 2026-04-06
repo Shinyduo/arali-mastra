@@ -2,8 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { keyRoleAssignments, keyRoleDefinitions, companies, appUser } from "../../../db/schema.js";
-import { eq, and, ilike, isNull } from "drizzle-orm";
-import { extractContext } from "../../../lib/rbac.js";
+import { eq, and, isNull } from "drizzle-orm";
+import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const assignKeyRole = createTool({
   id: "assign-key-role",
@@ -39,7 +39,7 @@ export const assignKeyRole = createTool({
 
     try {
       const company = await db.select({ id: companies.id, name: companies.name }).from(companies)
-        .where(and(eq(companies.enterpriseId, enterpriseId), ilike(companies.name, `%${input.companyName}%`))).limit(1);
+        .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName))).limit(1);
       if (!company[0]) return { success: false, message: `Company "${input.companyName}" not found.` };
 
       const roleDef = availableRoles.find((r) => r.key === input.roleKey);

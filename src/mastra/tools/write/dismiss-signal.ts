@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companySignal, companies } from "../../../db/schema.js";
 import { eq, and, ilike } from "drizzle-orm";
-import { extractContext } from "../../../lib/rbac.js";
+import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const dismissSignal = createTool({
   id: "dismiss-signal",
@@ -30,7 +30,7 @@ export const dismissSignal = createTool({
         .innerJoin(companies, eq(companySignal.companyId, companies.id))
         .where(and(
           eq(companySignal.enterpriseId, enterpriseId),
-          ilike(companies.name, `%${input.companyName}%`),
+          fuzzyNameMatch(companies.name, input.companyName),
           ilike(companySignal.title, `%${input.signalTitle}%`),
           eq(companySignal.status, "open"),
         ))

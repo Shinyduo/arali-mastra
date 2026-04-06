@@ -85,6 +85,22 @@ export function buildOwnerScopeFilter(
 }
 
 /**
+ * Fuzzy name match: splits input into words and requires ALL words to match
+ * anywhere in the name (case-insensitive). Handles "flex car" matching "Flexcar",
+ * "Flexi Car", "Carflex Auto LTD", etc.
+ *
+ * Works with both Drizzle columns and raw SQL column references.
+ */
+export function fuzzyNameMatch(column: any, search: string): SQL {
+  const words = search.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    return sql`${column} ILIKE ${"%" + search + "%"}`;
+  }
+  const conditions = words.map((w) => sql`${column} ILIKE ${"%" + w + "%"}`);
+  return sql`(${sql.join(conditions, sql` AND `)})`;
+}
+
+/**
  * Helper to extract AraliRuntimeContext values from Mastra's RequestContext.
  */
 export function extractContext(requestContext: {

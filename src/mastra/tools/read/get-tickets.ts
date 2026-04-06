@@ -7,8 +7,8 @@ import {
   interactionCompany,
   companies,
 } from "../../../db/schema.js";
-import { eq, and, ilike, gte, lte, desc, count } from "drizzle-orm";
-import { extractContext, buildCompanyScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, gte, lte, desc, count } from "drizzle-orm";
+import { extractContext, buildCompanyScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getTickets = createTool({
   id: "get-tickets",
@@ -55,7 +55,7 @@ export const getTickets = createTool({
       scopeFilter,
       input.status ? eq(tickets.status, input.status) : undefined,
       input.companyName
-        ? ilike(companies.name, `%${input.companyName}%`)
+        ? fuzzyNameMatch(companies.name, input.companyName!)
         : undefined,
       input.startDate
         ? gte(tickets.createdAt, new Date(input.startDate))

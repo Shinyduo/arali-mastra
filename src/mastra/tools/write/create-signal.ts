@@ -2,8 +2,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companySignal, companySignalOccurrence, companies } from "../../../db/schema.js";
-import { eq, and, ilike } from "drizzle-orm";
-import { extractContext } from "../../../lib/rbac.js";
+import { eq, and } from "drizzle-orm";
+import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 import { createHash } from "crypto";
 
 export const createSignal = createTool({
@@ -34,7 +34,7 @@ export const createSignal = createTool({
       const company = await db
         .select({ id: companies.id })
         .from(companies)
-        .where(and(eq(companies.enterpriseId, enterpriseId), ilike(companies.name, `%${input.companyName}%`)))
+        .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName)))
         .limit(1);
 
       if (!company[0]) return { success: false, message: `Company "${input.companyName}" not found.` };

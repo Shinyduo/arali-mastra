@@ -8,8 +8,8 @@ import {
   companies,
   appUser,
 } from "../../../db/schema.js";
-import { eq, and, lt, ilike, desc, count, sql } from "drizzle-orm";
-import { extractContext, buildOwnerScopeFilter } from "../../../lib/rbac.js";
+import { eq, and, lt, desc, count, sql } from "drizzle-orm";
+import { extractContext, buildOwnerScopeFilter, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const getActionItems = createTool({
   id: "get-action-items",
@@ -79,7 +79,7 @@ export const getActionItems = createTool({
       input.ownerEmail ? eq(appUser.email, input.ownerEmail) : undefined,
       input.overdue ? lt(actionItem.dueAt, new Date()) : undefined,
       input.companyName
-        ? ilike(companies.name, `%${input.companyName}%`)
+        ? fuzzyNameMatch(companies.name, input.companyName!)
         : undefined,
     ].filter(Boolean);
 
