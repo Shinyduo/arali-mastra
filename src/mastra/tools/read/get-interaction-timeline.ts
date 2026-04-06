@@ -8,9 +8,11 @@ export const getInteractionTimeline = createTool({
   id: "get-interaction-timeline",
   description:
     "Get a chronological timeline of interactions (meetings, calls, emails, tickets). " +
-    "Can filter by company, by user (team member), or both. " +
+    "Can filter by company, user (team member), kind, or date range. " +
+    "If no filters given, returns recent interactions across all companies the user has access to. " +
     "Use for 'last 10 interactions with Acme', 'Himanshu's recent meetings', " +
-    "'calls by John this week', or 'my interactions today'.",
+    "'calls by John this week', 'my interactions today', " +
+    "'show me all recent interactions', or 'what happened across my portfolio this week?'.",
   inputSchema: z.object({
     companyName: z
       .string()
@@ -43,10 +45,9 @@ export const getInteractionTimeline = createTool({
     );
 
     const limit = input.limit ?? 20;
-
-    if (!input.companyName && !input.companyId && !input.userEmail) {
-      return { error: "At least one filter is required: companyName, companyId, or userEmail." };
-    }
+    const hasCompanyFilter = !!(input.companyName || input.companyId);
+    const hasUserFilter = !!input.userEmail;
+    const scope = getCompanyScope(capabilities);
 
     const rows = await db.execute(sql`
       SELECT DISTINCT ON (i.id)
@@ -63,24 +64,22 @@ export const getInteractionTimeline = createTool({
       LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
       LEFT JOIN companies c ON c.id = ic.company_id
       LEFT JOIN participants p_user ON p_user.interaction_id = i.id
-        ${input.userEmail
+        ${hasUserFilter
           ? sql`AND p_user.user_id = (SELECT id FROM app_user WHERE email = ${input.userEmail} LIMIT 1)`
           : sql`AND FALSE`}
-      WHERE TRUE
+      WHERE ic.enterprise_id = ${enterpriseId}
         ${input.companyId ? sql`AND c.id = ${input.companyId}::uuid` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
-        ${input.userEmail
-          ? sql`AND p_user.id IS NOT NULL`
-          : sql`AND ic.enterprise_id = ${enterpriseId}`}
-        ${!input.userEmail && !input.companyName && !input.companyId
-          ? sql`AND ic.enterprise_id = ${enterpriseId}`
-          : sql``}
+        ${hasUserFilter ? sql`AND p_user.id IS NOT NULL` : sql``}
         ${input.kind ? sql`AND i.kind = ${input.kind}` : sql``}
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::timestamptz` : sql``}
         ${input.endDate ? sql`AND i.start_at <= ${input.endDate}::timestamptz` : sql``}
         ${
-          !getCompanyScope(capabilities)?.enterprise && (input.companyName || input.companyId)
-            ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`
+          !scope?.enterprise
+            ? sql`AND (
+                c.id IS NULL OR
+                ${buildKeyRoleScopeClause(scope, userId, "company", sql`c.id` as any) ?? sql`TRUE`}
+              )`
             : sql``
         }
       ORDER BY i.id, i.start_at DESC NULLS LAST
