@@ -1,9 +1,18 @@
 import { Agent } from "@mastra/core/agent";
 import { anthropic } from "@ai-sdk/anthropic";
+import { google } from "@ai-sdk/google";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 import type { AraliRuntimeContext } from "../context/types.js";
 import type { Tool } from "@mastra/core/tools";
+
+function getModel() {
+  const provider = process.env.AI_PROVIDER ?? "anthropic";
+  if (provider === "google") {
+    return google(process.env.GOOGLE_MODEL ?? "gemini-2.5-flash");
+  }
+  return anthropic(process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514");
+}
 
 // --- Read tools ---
 import * as readTools from "../tools/read/index.js";
@@ -94,7 +103,7 @@ export const araliAgent = new Agent({
   id: "arali-assistant",
   name: "arali-assistant",
 
-  model: anthropic("claude-sonnet-4-20250514"),
+  model: getModel(),
 
   memory: new Memory({
     storage: new PostgresStore({ connectionString: process.env.DATABASE_URL! }),
