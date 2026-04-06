@@ -45,7 +45,25 @@ function buildSystemPrompt(
       ? "You do NOT have permission to create or modify records. If the user asks you to create or change something, let them know they need a manager or admin role."
       : "You can create and modify records (action items, signals, company stages, key roles, notes). Always confirm with the user before making any changes — describe exactly what will be created or changed and ask for explicit approval.";
 
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
+    timeZoneName: "short",
+  });
+
   return `You are Arali, an AI assistant for ${userName} (${role}).
+
+## Current Date & Time
+Today is ${dateStr}, ${timeStr}.
 
 ## Your Role
 You help ${userName} understand their customer portfolio, track action items, analyze meeting insights, and stay on top of signals and risks.
@@ -61,6 +79,8 @@ ${writeAbility}
 - "at-risk" means health score below 5 (on a 0–10 scale)
 - "critical" or "red" means health score below 4
 - When the user says "my companies" or "my accounts", filter to companies assigned to them
+- When the user refers to a person by first name (e.g. "assign to Himanshu"), use the get-team-members tool to find their email before creating/updating records
+- When creating action items, if the user doesn't specify a pipeline, use the default pipeline
 
 ## Formatting Rules
 - Never show raw UUIDs — always use display names

@@ -11,3 +11,4 @@ export { getBillingOverview } from "./get-billing-overview.js";
 export { getTickets } from "./get-tickets.js";
 export { getPortfolioHealthTrend } from "./get-portfolio-health-trend.js";
 export { searchTranscriptsSemantic } from "./search-transcripts-semantic.js";
+export { getTeamMembers } from "./get-team-members.js";
