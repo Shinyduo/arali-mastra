@@ -8,11 +8,12 @@ import { extractContext } from "../../../lib/rbac.js";
 export const assignKeyRole = createTool({
   id: "assign-key-role",
   description:
-    "Assign a key role (CSM, AE, TAM) on a company to a user. " +
-    "IMPORTANT: First call WITHOUT confirmed=true to preview. Only set confirmed=true after user approves.",
+    "Assign a key role on a company to a user. " +
+    "IMPORTANT: First call WITHOUT confirmed=true to preview and see available role keys for this enterprise. " +
+    "Only set confirmed=true after user approves.",
   inputSchema: z.object({
     companyName: z.string().describe("Company name"),
-    roleKey: z.string().describe("Role key (e.g. 'csm', 'ae', 'tam')"),
+    roleKey: z.string().describe("Role key — call without confirmed first to see available keys"),
     newOwnerEmail: z.string().email().describe("Email of the user to assign"),
     confirmed: z.boolean().optional().default(false).describe("Set true only after user confirms"),
   }),
@@ -20,8 +21,20 @@ export const assignKeyRole = createTool({
     const { enterpriseId } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
+    // Fetch available role definitions for this enterprise
+    const availableRoles = await db
+      .select({ key: keyRoleDefinitions.key, name: keyRoleDefinitions.name })
+      .from(keyRoleDefinitions)
+      .where(eq(keyRoleDefinitions.enterpriseId, enterpriseId));
+
     if (!confirmed) {
-      return { needsConfirmation: true, message: `Assign ${input.roleKey} on "${input.companyName}" to ${input.newOwnerEmail}?` };
+      const validRole = availableRoles.find((r) => r.key === input.roleKey);
+      return {
+        needsConfirmation: true,
+        message: `Assign ${validRole?.name ?? input.roleKey} on "${input.companyName}" to ${input.newOwnerEmail}?`,
+        availableRoleKeys: availableRoles.map((r) => ({ key: r.key, name: r.name })),
+        roleKeyValid: !!validRole,
+      };
     }
 
     try {
@@ -29,30 +42,40 @@ export const assignKeyRole = createTool({
         .where(and(eq(companies.enterpriseId, enterpriseId), ilike(companies.name, `%${input.companyName}%`))).limit(1);
       if (!company[0]) return { success: false, message: `Company "${input.companyName}" not found.` };
 
-      const roleDef = await db.select({ id: keyRoleDefinitions.id, name: keyRoleDefinitions.name }).from(keyRoleDefinitions)
+      const roleDef = availableRoles.find((r) => r.key === input.roleKey);
+      if (!roleDef) {
+        return {
+          success: false,
+          message: `Role "${input.roleKey}" not found.`,
+          availableRoleKeys: availableRoles.map((r) => ({ key: r.key, name: r.name })),
+        };
+      }
+
+      const roleDefFull = await db.select({ id: keyRoleDefinitions.id, name: keyRoleDefinitions.name }).from(keyRoleDefinitions)
         .where(and(eq(keyRoleDefinitions.enterpriseId, enterpriseId), eq(keyRoleDefinitions.key, input.roleKey))).limit(1);
-      if (!roleDef[0]) return { success: false, message: `Role "${input.roleKey}" not found.` };
 
       const newUser = await db.select({ id: appUser.id, name: appUser.name }).from(appUser)
         .where(eq(appUser.email, input.newOwnerEmail)).limit(1);
       if (!newUser[0]) return { success: false, message: `User "${input.newOwnerEmail}" not found.` };
 
+      // End current assignment
       await db.update(keyRoleAssignments).set({ endAt: new Date() })
         .where(and(
           eq(keyRoleAssignments.enterpriseId, enterpriseId),
-          eq(keyRoleAssignments.keyRoleDefinitionId, roleDef[0].id),
+          eq(keyRoleAssignments.keyRoleDefinitionId, roleDefFull[0].id),
           eq(keyRoleAssignments.entityType, "company"),
           eq(keyRoleAssignments.entityId, company[0].id),
           isNull(keyRoleAssignments.endAt),
         ));
 
+      // Create new assignment
       await db.insert(keyRoleAssignments).values({
-        enterpriseId, keyRoleDefinitionId: roleDef[0].id,
+        enterpriseId, keyRoleDefinitionId: roleDefFull[0].id,
         entityType: "company", entityId: company[0].id,
         userId: newUser[0].id, startAt: new Date(),
       });
 
-      return { success: true, message: `${newUser[0].name} assigned as ${roleDef[0].name} for ${company[0].name}.` };
+      return { success: true, message: `${newUser[0].name} assigned as ${roleDefFull[0].name} for ${company[0].name}.` };
     } catch (err: any) {
       return { success: false, message: `Failed: ${err.message}` };
     }
