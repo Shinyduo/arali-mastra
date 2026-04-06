@@ -9,10 +9,11 @@ export const getCompanies = createTool({
   id: "get-companies",
   description:
     "List companies with optional filters for health score, stage, ARR, owner, domain, name search, " +
-    "or custom field values. Companies may have enterprise-defined custom fields (e.g. 'contract_value', " +
-    "'industry', 'region'). Use customFieldFilters to filter by them, and set includeCustomFields=true " +
-    "to return their values. Use this for list/comparison queries like 'show me at-risk companies', " +
-    "'companies with ARR over 100k', or 'companies where region is APAC'.",
+    "creation date, or custom field values. Companies may have enterprise-defined custom fields " +
+    "(e.g. 'contract_value', 'industry', 'region'). Use customFieldFilters to filter by them, " +
+    "and set includeCustomFields=true to return their values. Use this for list/comparison queries " +
+    "like 'show me at-risk companies', 'companies with ARR over 100k', 'companies where region is APAC', " +
+    "'new companies added today', or 'which companies came in this week?'.",
   inputSchema: z.object({
     healthScoreMin: z
       .number()
@@ -44,6 +45,14 @@ export const getCompanies = createTool({
       .string()
       .optional()
       .describe("Search company name (case-insensitive partial match)"),
+    createdAfter: z
+      .string()
+      .optional()
+      .describe("Only companies created on or after this date (YYYY-MM-DD). Use for 'new companies today', 'added this week'."),
+    createdBefore: z
+      .string()
+      .optional()
+      .describe("Only companies created on or before this date (YYYY-MM-DD)"),
     customFieldFilters: z
       .array(
         z.object({
@@ -65,10 +74,10 @@ export const getCompanies = createTool({
       .default(false)
       .describe("If true, include custom field values in the response"),
     sortBy: z
-      .enum(["healthScore", "arr", "name", "updatedAt"])
+      .enum(["healthScore", "arr", "name", "updatedAt", "createdAt"])
       .optional()
       .default("name")
-      .describe("Sort field"),
+      .describe("Sort field. Use 'createdAt' for newest-first queries."),
     sortOrder: z
       .enum(["asc", "desc"])
       .optional()
@@ -185,6 +194,12 @@ export const getCompanies = createTool({
       input.search
         ? fuzzyNameMatch(companies.name, input.search)
         : undefined,
+      input.createdAfter
+        ? gte(companies.createdAt, new Date(input.createdAfter))
+        : undefined,
+      input.createdBefore
+        ? lte(companies.createdAt, new Date(input.createdBefore + "T23:59:59.999Z"))
+        : undefined,
       ...customFieldConditions,
     ].filter(Boolean);
 
@@ -199,6 +214,7 @@ export const getCompanies = createTool({
       arr: companies.ARR,
       name: companies.name,
       updatedAt: companies.updatedAt,
+      createdAt: companies.createdAt,
     } as const;
     const sortColumn = sortColumnMap[sortBy];
     const orderFn = sortOrder === "desc" ? desc : asc;
@@ -216,6 +232,7 @@ export const getCompanies = createTool({
           stageName: stage.name,
           stageKey: stage.key,
           updatedAt: companies.updatedAt,
+          createdAt: companies.createdAt,
         })
         .from(companies)
         .leftJoin(owner, eq(companies.ownerUserId, owner.id))
@@ -289,6 +306,7 @@ export const getCompanies = createTool({
           arr: r.arr ?? "N/A",
           owner: r.ownerName ?? "Unassigned",
           stage: r.stageName ?? "—",
+          addedOn: r.createdAt?.toISOString().slice(0, 10) ?? "—",
           lastUpdated: r.updatedAt?.toISOString().slice(0, 10) ?? "—",
         };
         if (includeCustomFields && customFieldsMap[r.id]) {

@@ -14,9 +14,10 @@ import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatc
 export const getContacts = createTool({
   id: "get-contacts",
   description:
-    "List contacts (people at customer companies). " +
+    "List contacts / leads (people at customer companies). " +
     "Use for 'who are the contacts at Acme?', 'find contact with email john@acme.com', " +
-    "or 'contacts with title VP'.",
+    "'contacts with title VP', 'which new leads came in today?', " +
+    "'new contacts this week', or 'contacts added in the last 7 days'.",
   inputSchema: z.object({
     companyName: z
       .string()
@@ -34,6 +35,19 @@ export const getContacts = createTool({
       .string()
       .optional()
       .describe("Search by job title (partial match)"),
+    createdAfter: z
+      .string()
+      .optional()
+      .describe("Only contacts created on or after this date (YYYY-MM-DD). Use for 'new leads today', 'contacts added this week'."),
+    createdBefore: z
+      .string()
+      .optional()
+      .describe("Only contacts created on or before this date (YYYY-MM-DD)"),
+    sortBy: z
+      .enum(["created_at", "name"])
+      .optional()
+      .default("created_at")
+      .describe("Sort by field. Default: created_at (newest first)."),
     limit: z.number().int().min(1).max(50).optional().default(20),
     offset: z.number().int().min(0).optional().default(0),
   }),
@@ -65,6 +79,8 @@ export const getContacts = createTool({
         ${input.titleSearch ? sql`AND ct.title ILIKE ${"%" + input.titleSearch + "%"}` : sql``}
         ${input.emailSearch ? sql`AND ce.email ILIKE ${"%" + input.emailSearch + "%"}` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
+        ${input.createdAfter ? sql`AND ct.created_at >= ${input.createdAfter}::timestamptz` : sql``}
+        ${input.createdBefore ? sql`AND ct.created_at <= ${input.createdBefore}::timestamptz` : sql``}
         ${
           !getCompanyScope(capabilities)?.enterprise
             ? sql`AND (
@@ -73,7 +89,7 @@ export const getContacts = createTool({
               )`
             : sql``
         }
-      ORDER BY ct.id, ct.created_at DESC
+      ORDER BY ct.id, ${(input.sortBy ?? "created_at") === "name" ? sql`ct.full_name ASC` : sql`ct.created_at DESC`}
       LIMIT ${limit}
       OFFSET ${offset}
     `);
@@ -86,6 +102,9 @@ export const getContacts = createTool({
         phone: r.primary_phone ?? "—",
         company: r.company_name ?? "—",
         relation: r.relation ?? "—",
+        addedOn: r.created_at
+          ? new Date(r.created_at).toISOString().slice(0, 10)
+          : "—",
       })),
     };
   },
