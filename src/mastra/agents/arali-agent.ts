@@ -116,7 +116,8 @@ export const araliAgent = new Agent({
   memory: new Memory({
     storage: new PostgresStore({
       id: "arali-memory",
-      connectionString: process.env.MASTRA_DATABASE_URL || process.env.DATABASE_URL!,
+      connectionString: process.env.DATABASE_URL!,
+      schemaName: "mastra",
     }),
     options: {
       lastMessages: 30,
