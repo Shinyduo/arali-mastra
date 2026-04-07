@@ -224,7 +224,7 @@ export const araliAgent = new Agent({
       schemaName: "mastra",
     }),
     options: {
-      lastMessages: 30,
+      lastMessages: 15,
       semanticRecall: false,
       workingMemory: { enabled: false },
     },
