@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type { LanguageModelV1, LanguageModelV1CallOptions } from "@ai-sdk/provider";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
@@ -40,6 +41,8 @@ function withPromptCaching<T extends LanguageModelV1>(model: T): T {
   }) as T;
 }
 
+const openrouter = createOpenRouter();
+
 function getModel() {
   const provider = process.env.AI_PROVIDER ?? "anthropic";
   const model = process.env.AI_MODEL;
@@ -49,6 +52,12 @@ function getModel() {
       return google(model ?? "gemini-3-flash-preview");
     case "openai":
       return openai(model ?? "gpt-4o");
+    case "openrouter":
+      return openrouter(model ?? "openrouter/auto");
+    case "kimi":
+      return openrouter(model ?? "moonshotai/kimi-k2.5");
+    case "minimax":
+      return openrouter(model ?? "minimax/minimax-m2.1");
     case "anthropic":
     default:
       return withPromptCaching(anthropic(model ?? "claude-sonnet-4-20250514"));

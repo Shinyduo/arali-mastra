@@ -151,8 +151,9 @@ Key conventions:
 | `ANTHROPIC_API_KEY` | Yes* | Claude API key (*required if AI_PROVIDER=anthropic) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Gemini API key |
 | `OPENAI_API_KEY` | No | OpenAI API key (also used for semantic search embeddings) |
-| `AI_PROVIDER` | No | `anthropic` (default), `google`, or `openai` |
+| `AI_PROVIDER` | No | `anthropic` (default), `google`, `openai`, `openrouter`, `kimi`, or `minimax` |
 | `AI_MODEL` | No | Override model name |
+| `OPENROUTER_API_KEY` | No | OpenRouter API key (required if AI_PROVIDER is `openrouter`, `kimi`, or `minimax`) |
 | `PORT` | No | Server port (default 4111) |
 
 ## Key Design Decisions
