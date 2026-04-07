@@ -2,12 +2,43 @@ import { Agent } from "@mastra/core/agent";
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
+import type { LanguageModelV1, LanguageModelV1CallOptions } from "@ai-sdk/provider";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
 import type { AraliRuntimeContext } from "../context/types.js";
 import type { Tool } from "@mastra/core/tools";
 import type { ScopedCapabilityMap } from "../../lib/resolve-user-role.js";
 import { hasWriteAccess, getCompanyScope } from "../../lib/rbac.js";
+
+/**
+ * Wraps an Anthropic V1 model to inject cache_control on the system message.
+ * The system prompt is large and stable per user — caching it saves input
+ * token costs on every follow-up turn. TTL is 5 minutes (ephemeral).
+ * Operates at the V1 doGenerate/doStream level to avoid @ai-sdk/anthropic
+ * v1 ↔ ai v6 LanguageModelV3 compatibility issues with wrapLanguageModel.
+ */
+function withPromptCaching<T extends LanguageModelV1>(model: T): T {
+  const injectCache = (options: LanguageModelV1CallOptions): LanguageModelV1CallOptions => ({
+    ...options,
+    prompt: options.prompt.map((msg) =>
+      msg.role === "system"
+        ? { ...msg, providerMetadata: { anthropic: { cacheControl: { type: "ephemeral" } } } }
+        : msg
+    ),
+  });
+
+  return new Proxy(model, {
+    get(target, prop) {
+      if (prop === "doGenerate") {
+        return (options: LanguageModelV1CallOptions) => target.doGenerate(injectCache(options));
+      }
+      if (prop === "doStream") {
+        return (options: LanguageModelV1CallOptions) => target.doStream(injectCache(options));
+      }
+      return (target as any)[prop];
+    },
+  }) as T;
+}
 
 function getModel() {
   const provider = process.env.AI_PROVIDER ?? "anthropic";
@@ -20,7 +51,7 @@ function getModel() {
       return openai(model ?? "gpt-4o");
     case "anthropic":
     default:
-      return anthropic(model ?? "claude-sonnet-4-20250514");
+      return withPromptCaching(anthropic(model ?? "claude-sonnet-4-20250514"));
   }
 }
 

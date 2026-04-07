@@ -49,29 +49,34 @@ export const getInteractionTimeline = createTool({
     const hasUserFilter = !!input.userEmail;
     const scope = getCompanyScope(capabilities);
 
-    // Main query for interactions
+    // Main query for interactions — deduplicate in subquery, sort by date in outer query
     const rows = await db.execute(sql`
-      SELECT DISTINCT ON (i.id)
-        i.id,
-        i.kind,
-        i.title,
-        i.summary,
-        i.start_at,
-        i.end_at,
-        i.source,
-        c.name AS company_name,
-        p_user.display_name AS user_display_name
-      FROM interactions i
-      LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
-      LEFT JOIN companies c ON c.id = ic.company_id
-      LEFT JOIN participants p_user ON p_user.interaction_id = i.id
-        ${hasUserFilter
-          ? sql`AND p_user.user_id = (SELECT id FROM app_user WHERE email = ${input.userEmail} LIMIT 1)`
-          : sql`AND FALSE`}
-      WHERE ic.enterprise_id = ${enterpriseId}
+      SELECT * FROM (
+        SELECT DISTINCT ON (i.id)
+          i.id,
+          i.kind,
+          i.title,
+          i.summary,
+          i.start_at,
+          i.end_at,
+          i.source,
+          c.name AS company_name
+        FROM interactions i
+        LEFT JOIN interaction_company ic ON ic.interaction_id = i.id AND ic.enterprise_id = ${enterpriseId}
+        LEFT JOIN companies c ON c.id = ic.company_id
+        ${hasUserFilter ? sql`
+          JOIN participants p_user ON p_user.interaction_id = i.id
+            AND p_user.user_id = (SELECT id FROM app_user WHERE email = ${input.userEmail} LIMIT 1)
+        ` : sql``}
+        WHERE (
+          ic.enterprise_id IS NOT NULL
+          OR EXISTS (
+            SELECT 1 FROM participants p_self
+            WHERE p_self.interaction_id = i.id AND p_self.user_id = ${userId}
+          )
+        )
         ${input.companyId ? sql`AND c.id = ${input.companyId}::uuid` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
-        ${hasUserFilter ? sql`AND p_user.id IS NOT NULL` : sql``}
         ${input.kind ? sql`AND i.kind = ${input.kind}` : sql``}
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::date` : sql``}
         ${input.endDate ? sql`AND i.start_at < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
@@ -83,7 +88,9 @@ export const getInteractionTimeline = createTool({
               )`
             : sql``
         }
-      ORDER BY i.id, i.start_at DESC NULLS LAST
+        ORDER BY i.id
+      ) AS deduped
+      ORDER BY start_at DESC NULLS LAST
       LIMIT ${limit}
     `);
 
