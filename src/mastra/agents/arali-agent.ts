@@ -46,7 +46,7 @@ function getModel() {
 
   switch (provider) {
     case "google":
-      return google(model ?? "gemini-2.5-flash");
+      return google(model ?? "gemini-3-flash-preview");
     case "openai":
       return openai(model ?? "gpt-4o");
     case "anthropic":
