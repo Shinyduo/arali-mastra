@@ -9,9 +9,15 @@ export const weeklyDigest = createTool({
   description:
     "Weekly summary: new/worsened signals, health score changes, overdue items, key meetings, " +
     "and accounts with no interactions this week. " +
-    "Use for 'weekly digest', 'weekly summary', 'what happened this week?', or 'week in review'.",
-  inputSchema: z.object({}),
-  execute: async (_input, context) => {
+    "Use for 'weekly digest', 'weekly summary', 'what happened this week?', or 'week in review'. " +
+    "Pass onlyMine=true when the user says 'my week' or 'my summary' to scope action items to themselves only.",
+  inputSchema: z.object({
+    onlyMine: z
+      .boolean()
+      .optional()
+      .describe("If true, scopes action items and meetings to the current user only. Use when the user says 'my week' or 'my summary'."),
+  }),
+  execute: async (input, context) => {
     const { enterpriseId, userId } = extractContext(context.requestContext!);
 
     const weekAgo = new Date(Date.now() - 7 * 86400000);
@@ -73,6 +79,7 @@ export const weeklyDigest = createTool({
           WHERE ai.enterprise_id = ${enterpriseId}
             AND COALESCE(ai.overdue_at, ai.due_at) < NOW()
             AND (ps.bucket IS NULL OR ps.bucket NOT IN ('done', 'archived'))
+            ${input.onlyMine ? sql`AND ai.owner_user_id = ${userId}` : sql``}
           ORDER BY COALESCE(ai.overdue_at, ai.due_at) ASC
           LIMIT 15
         `),
