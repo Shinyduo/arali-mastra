@@ -3,48 +3,20 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import type { LanguageModelV1, LanguageModelV1CallOptions } from "@ai-sdk/provider";
 import { Memory } from "@mastra/memory";
 import { PostgresStore } from "@mastra/pg";
-import type { AraliRuntimeContext } from "../context/types.js";
 import type { Tool } from "@mastra/core/tools";
 import type { ScopedCapabilityMap } from "../../lib/resolve-user-role.js";
 import { hasWriteAccess, getCompanyScope } from "../../lib/rbac.js";
 
-/**
- * Wraps an Anthropic V1 model to inject cache_control on the system message.
- * The system prompt is large and stable per user — caching it saves input
- * token costs on every follow-up turn. TTL is 5 minutes (ephemeral).
- * Operates at the V1 doGenerate/doStream level to avoid @ai-sdk/anthropic
- * v1 ↔ ai v6 LanguageModelV3 compatibility issues with wrapLanguageModel.
- */
-function withPromptCaching<T extends LanguageModelV1>(model: T): T {
-  const injectCache = (options: LanguageModelV1CallOptions): LanguageModelV1CallOptions => ({
-    ...options,
-    prompt: options.prompt.map((msg) =>
-      msg.role === "system"
-        ? { ...msg, providerMetadata: { anthropic: { cacheControl: { type: "ephemeral" } } } }
-        : msg
-    ),
-  });
-
-  return new Proxy(model, {
-    get(target, prop) {
-      if (prop === "doGenerate") {
-        return (options: LanguageModelV1CallOptions) => target.doGenerate(injectCache(options));
-      }
-      if (prop === "doStream") {
-        return (options: LanguageModelV1CallOptions) => target.doStream(injectCache(options));
-      }
-      return (target as any)[prop];
-    },
-  }) as T;
-}
-
 const openrouter = createOpenRouter();
 
+function getProvider() {
+  return process.env.AI_PROVIDER ?? "anthropic";
+}
+
 function getModel() {
-  const provider = process.env.AI_PROVIDER ?? "anthropic";
+  const provider = getProvider();
   const model = process.env.AI_MODEL;
 
   switch (provider) {
@@ -60,7 +32,7 @@ function getModel() {
       return openrouter(model ?? "minimax/minimax-m2.1");
     case "anthropic":
     default:
-      return withPromptCaching(anthropic(model ?? "claude-sonnet-4-20250514"));
+      return anthropic(model ?? "claude-sonnet-4-20250514");
   }
 }
 
@@ -150,6 +122,14 @@ ${writeAbility}
 - Keep responses concise — no unnecessary preamble
 - Suggest relevant next steps when appropriate (e.g., "Would you like to see the full interaction timeline?")
 
+## Planning
+Before making tool calls, briefly plan your approach:
+1. Identify which tools you need and in what order
+2. Prefer composite tools (brief-me, my-day-today, weekly-digest) over multiple individual calls — they fetch everything in one step
+3. Call independent tools in parallel when possible (e.g., get-open-signals + get-action-items together)
+4. Avoid redundant calls — if get-company-overview already returned signals, don't call get-open-signals again for the same company
+5. You have a maximum of 10 tool calls per response — plan accordingly and prioritize the most valuable data first
+
 ## Tool Usage
 - Use get-company-overview for questions about a single company
 - Use get-companies for lists, comparisons, or filtered queries across companies. Supports: health trend filter (declining/improving/stable), no-owner filter, days since last interaction, creation date range, daysSinceStageChange (use with stageKey to find companies stuck at a stage for N+ days)
@@ -233,7 +213,21 @@ export const araliAgent = new Agent({
   instructions: ({ requestContext }) => {
     const capabilities = (requestContext.get("capabilities") as ScopedCapabilityMap) ?? {};
     const userName = requestContext.get("userName") as string;
-    return buildSystemPrompt(userName || "User", capabilities);
+    const content = buildSystemPrompt(userName || "User", capabilities);
+
+    // Enable prompt caching for Anthropic — the system prompt is large and
+    // stable per user, so caching saves input token costs on follow-up turns.
+    if (getProvider() === "anthropic") {
+      return {
+        role: "system" as const,
+        content,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
+      };
+    }
+
+    return content;
   },
 
   tools: ({ requestContext }) => {
