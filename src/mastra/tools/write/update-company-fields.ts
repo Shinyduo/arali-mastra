@@ -4,6 +4,7 @@ import { db } from "../../../db/index.js";
 import { companies, fieldDefinitions, fieldValues } from "../../../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { logActivity } from "../../../lib/activity-log.js";
 
 export const updateCompanyFields = createTool({
   id: "update-company-fields",
@@ -31,7 +32,7 @@ export const updateCompanyFields = createTool({
       .describe("Set true only after user confirms"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId } = extractContext(context.requestContext!);
+    const { enterpriseId, userId } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
     // Resolve company
@@ -153,6 +154,19 @@ export const updateCompanyFields = createTool({
             set: { ...valueColumns, updatedAt: new Date() } as any,
           });
       }
+
+      await logActivity({
+        enterpriseId,
+        entityType: "company",
+        entityId: company.id,
+        actionType: "updated",
+        actorUserId: userId,
+        metadata: {
+          entity_label: company.name,
+          field_labels: validFields.map((f) => f.def.name ?? f.def.key),
+          source: "ai",
+        },
+      });
 
       return {
         success: true,

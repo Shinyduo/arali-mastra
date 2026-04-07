@@ -1,7 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
-import { companies, appUser, stageDefinition } from "../../../db/schema.js";
+import { companies, appUser, stageDefinition, entityActivityLogs } from "../../../db/schema.js";
 import { eq, and, gte, lte, asc, desc, sql, count } from "drizzle-orm";
 import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
@@ -9,12 +9,13 @@ export const getCompanies = createTool({
   id: "get-companies",
   description:
     "List companies with optional filters for health score, stage, ARR, owner, domain, name search, " +
-    "creation date, inactivity, or custom field values. Companies may have enterprise-defined custom fields " +
+    "creation date, inactivity, stage duration, or custom field values. Companies may have enterprise-defined custom fields " +
     "(e.g. 'contract_value', 'industry', 'region'). Use customFieldFilters to filter by them, " +
     "and set includeCustomFields=true to return their values. Use this for list/comparison queries " +
     "like 'show me at-risk companies', 'companies with ARR over 100k', 'companies where region is APAC', " +
     "'new companies added today', 'which companies came in this week?', " +
-    "'companies with no owner', 'untouched accounts in 30 days', or 'companies with declining health'.",
+    "'companies with no owner', 'untouched accounts in 30 days', 'companies with declining health', " +
+    "or 'companies stuck at negotiation stage for 5 days' (use stageKey + daysSinceStageChange).",
   inputSchema: z.object({
     healthScoreMin: z
       .number()
@@ -106,6 +107,16 @@ export const getCompanies = createTool({
       .optional()
       .default(25)
       .describe("Max results to return"),
+    daysSinceStageChange: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        "Only companies whose stage has not changed in the last N days (i.e. stuck in current stage for at least N days). " +
+        "Use with stageKey to find companies stuck at a particular stage. " +
+        "E.g. stageKey='negotiation' + daysSinceStageChange=5 finds companies stuck in negotiation for 5+ days."
+      ),
     offset: z
       .number()
       .int()
@@ -239,6 +250,16 @@ export const getCompanies = createTool({
             WHERE ic.company_id = ${companies.id}
               AND i.start_at >= NOW() - INTERVAL '${sql.raw(String(input.daysSinceLastInteraction))} days'
           )`
+        : undefined,
+      input.daysSinceStageChange
+        ? sql`COALESCE(
+            (SELECT MAX(eal.created_at) FROM entity_activity_logs eal
+             WHERE eal.entity_type = 'company'
+               AND eal.entity_id = ${companies.id}
+               AND eal.enterprise_id = ${enterpriseId}
+               AND eal.action_type = 'stage_changed'),
+            ${companies.createdAt}
+          ) < NOW() - INTERVAL '${sql.raw(String(input.daysSinceStageChange))} days'`
         : undefined,
       input.healthTrend === "declining"
         ? sql`EXISTS (

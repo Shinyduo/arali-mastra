@@ -4,6 +4,7 @@ import { db } from "../../../db/index.js";
 import { companies, stageDefinition } from "../../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { logActivity } from "../../../lib/activity-log.js";
 
 export const updateCompanyStage = createTool({
   id: "update-company-stage",
@@ -16,7 +17,7 @@ export const updateCompanyStage = createTool({
     confirmed: z.boolean().optional().default(false).describe("Set true only after user confirms"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId } = extractContext(context.requestContext!);
+    const { enterpriseId, userId } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
     if (!confirmed) {
@@ -25,12 +26,23 @@ export const updateCompanyStage = createTool({
 
     try {
       const matched = await db
-        .select({ id: companies.id, name: companies.name })
+        .select({ id: companies.id, name: companies.name, stageDefinitionId: companies.stageDefinitionId })
         .from(companies)
         .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName)))
         .limit(1);
 
       if (!matched[0]) return { success: false, message: `Company "${input.companyName}" not found.` };
+
+      // Fetch old stage name for the log
+      let fromStageName: string | undefined;
+      if (matched[0].stageDefinitionId) {
+        const oldStage = await db
+          .select({ name: stageDefinition.name })
+          .from(stageDefinition)
+          .where(eq(stageDefinition.id, matched[0].stageDefinitionId))
+          .limit(1);
+        fromStageName = oldStage[0]?.name;
+      }
 
       const stage = await db
         .select({ id: stageDefinition.id, name: stageDefinition.name })
@@ -46,6 +58,20 @@ export const updateCompanyStage = createTool({
       if (!stage[0]) return { success: false, message: `Stage "${input.targetStageKey}" not found.` };
 
       await db.update(companies).set({ stageDefinitionId: stage[0].id, updatedAt: new Date() }).where(eq(companies.id, matched[0].id));
+
+      await logActivity({
+        enterpriseId,
+        entityType: "company",
+        entityId: matched[0].id,
+        actionType: "stage_changed",
+        actorUserId: userId,
+        metadata: {
+          entity_label: matched[0].name,
+          from_label: fromStageName,
+          to_label: stage[0].name,
+          source: "ai",
+        },
+      });
 
       return { success: true, message: `${matched[0].name} moved to stage "${stage[0].name}".` };
     } catch (err: any) {

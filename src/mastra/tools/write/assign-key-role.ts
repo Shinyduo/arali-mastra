@@ -4,6 +4,7 @@ import { db } from "../../../db/index.js";
 import { keyRoleAssignments, keyRoleDefinitions, companies, appUser } from "../../../db/schema.js";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { logActivity } from "../../../lib/activity-log.js";
 
 export const assignKeyRole = createTool({
   id: "assign-key-role",
@@ -18,7 +19,7 @@ export const assignKeyRole = createTool({
     confirmed: z.boolean().optional().default(false).describe("Set true only after user confirms"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId } = extractContext(context.requestContext!);
+    const { enterpriseId, userId } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
     // Fetch available role definitions:
@@ -87,6 +88,19 @@ export const assignKeyRole = createTool({
         enterpriseId, keyRoleDefinitionId: roleDefFull[0].id,
         entityType: "company", entityId: company[0].id,
         userId: newUser[0].id, startAt: new Date(),
+      });
+
+      await logActivity({
+        enterpriseId,
+        entityType: "company",
+        entityId: company[0].id,
+        actionType: "owner_changed",
+        actorUserId: userId,
+        metadata: {
+          entity_label: company[0].name,
+          to_label: `${newUser[0].name} (${roleDefFull[0].name})`,
+          source: "ai",
+        },
       });
 
       return { success: true, message: `${newUser[0].name} assigned as ${roleDefFull[0].name} for ${company[0].name}.` };

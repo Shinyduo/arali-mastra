@@ -4,6 +4,7 @@ import { db } from "../../../db/index.js";
 import { entityNotes, companies, contacts, accounts } from "../../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { logActivity } from "../../../lib/activity-log.js";
 
 export const createEntityNote = createTool({
   id: "create-entity-note",
@@ -52,6 +53,15 @@ export const createEntityNote = createTool({
         enterpriseId, entityType: input.entityType, entityId,
         title: input.title ?? null, content: input.content,
         createdByUserId: userId, updatedByUserId: userId,
+      });
+
+      await logActivity({
+        enterpriseId,
+        entityType: input.entityType as "company" | "contact" | "account",
+        entityId,
+        actionType: "note_created",
+        actorUserId: userId,
+        metadata: { entity_label: resolvedName, source: "ai" },
       });
 
       return { success: true, message: `Note added to ${input.entityType} "${resolvedName}".` };
