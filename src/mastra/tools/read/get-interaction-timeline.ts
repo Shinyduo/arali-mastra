@@ -12,7 +12,8 @@ export const getInteractionTimeline = createTool({
     "If no filters given, returns recent interactions across all companies the user has access to. " +
     "Use for 'last 10 interactions with Acme', 'Himanshu's recent meetings', " +
     "'calls by John this week', 'my interactions today', " +
-    "'show me all recent interactions', or 'what happened across my portfolio this week?'.",
+    "'show me all recent interactions', or 'what happened across my portfolio this week?'. " +
+    "Only completed meetings are included; calls, threads, and tickets are included regardless of status.",
   inputSchema: z.object({
     companyName: z
       .string()
@@ -49,7 +50,9 @@ export const getInteractionTimeline = createTool({
     const hasUserFilter = !!input.userEmail;
     const scope = getCompanyScope(capabilities);
 
-    // Main query for interactions — deduplicate in subquery, sort by date in outer query
+    // Main query — LEFT JOIN sub-tables to get status + extra fields per kind.
+    // meetings: only include status='completed' (scheduled/cancelled/no_show excluded).
+    // calls, threads, tickets: all statuses included.
     const rows = await db.execute(sql`
       SELECT * FROM (
         SELECT DISTINCT ON (i.id)
@@ -60,10 +63,26 @@ export const getInteractionTimeline = createTool({
           i.start_at,
           i.end_at,
           i.source,
-          c.name AS company_name
+          c.name AS company_name,
+          -- Status from sub-table (only one JOIN will match per row)
+          COALESCE(m.status::text, ca.status::text, t.status::text, tk.status::text) AS status,
+          -- Meeting-specific
+          m.channel AS meeting_channel,
+          -- Call-specific
+          ca.direction AS call_direction,
+          ca.duration_seconds AS call_duration_seconds,
+          -- Thread-specific
+          t.channel AS thread_channel,
+          -- Ticket-specific
+          tk.issue_resolved_at AS ticket_resolved_at,
+          tk.first_response_at AS ticket_first_response_at
         FROM interactions i
         LEFT JOIN interaction_company ic ON ic.interaction_id = i.id AND ic.enterprise_id = ${enterpriseId}
         LEFT JOIN companies c ON c.id = ic.company_id
+        LEFT JOIN meetings m ON m.interaction_id = i.id
+        LEFT JOIN calls ca ON ca.interaction_id = i.id
+        LEFT JOIN threads t ON t.interaction_id = i.id
+        LEFT JOIN tickets tk ON tk.interaction_id = i.id
         ${hasUserFilter ? sql`
           JOIN participants p_user ON p_user.interaction_id = i.id
             AND p_user.user_id = (SELECT id FROM app_user WHERE email = ${input.userEmail} LIMIT 1)
@@ -75,6 +94,8 @@ export const getInteractionTimeline = createTool({
             WHERE p_self.interaction_id = i.id AND p_self.user_id = ${userId}
           )
         )
+        -- Only completed meetings; all other kinds pass through
+        AND (i.kind != 'meeting' OR m.status = 'completed')
         ${input.companyId ? sql`AND c.id = ${input.companyId}::uuid` : sql``}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.kind ? sql`AND i.kind = ${input.kind}` : sql``}
@@ -112,24 +133,56 @@ export const getInteractionTimeline = createTool({
     }
 
     return {
-      interactions: (rows as any[]).map((r: any) => ({
-        type: r.kind,
-        title: r.title,
-        summary: r.summary
-          ? r.summary.length > 300
-            ? r.summary.slice(0, 300) + "…"
-            : r.summary
-          : "—",
-        date: r.start_at
-          ? new Date(r.start_at).toISOString().slice(0, 10)
-          : "—",
-        endDate: r.end_at
-          ? new Date(r.end_at).toISOString().slice(0, 10)
-          : null,
-        source: r.source,
-        company: r.company_name ?? "—",
-        participants: participantsMap[r.id] ?? [],
-      })),
+      interactions: (rows as any[]).map((r: any) => {
+        const base = {
+          type: r.kind,
+          title: r.title,
+          summary: r.summary
+            ? r.summary.length > 300
+              ? r.summary.slice(0, 300) + "…"
+              : r.summary
+            : "—",
+          date: r.start_at
+            ? new Date(r.start_at).toISOString().slice(0, 10)
+            : "—",
+          endDate: r.end_at
+            ? new Date(r.end_at).toISOString().slice(0, 10)
+            : null,
+          status: r.status ?? null,
+          source: r.source,
+          company: r.company_name ?? "—",
+          participants: participantsMap[r.id] ?? [],
+        };
+
+        // Append kind-specific fields
+        if (r.kind === "meeting" && r.meeting_channel) {
+          return { ...base, channel: r.meeting_channel };
+        }
+        if (r.kind === "call") {
+          return {
+            ...base,
+            direction: r.call_direction ?? null,
+            durationMinutes: r.call_duration_seconds
+              ? Math.round(r.call_duration_seconds / 60)
+              : null,
+          };
+        }
+        if (r.kind === "thread" && r.thread_channel) {
+          return { ...base, channel: r.thread_channel };
+        }
+        if (r.kind === "ticket") {
+          return {
+            ...base,
+            resolvedAt: r.ticket_resolved_at
+              ? new Date(r.ticket_resolved_at).toISOString().slice(0, 10)
+              : null,
+            firstResponseAt: r.ticket_first_response_at
+              ? new Date(r.ticket_first_response_at).toISOString().slice(0, 10)
+              : null,
+          };
+        }
+        return base;
+      }),
     };
   },
 });
