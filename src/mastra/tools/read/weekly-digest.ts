@@ -62,7 +62,8 @@ export const weeklyDigest = createTool({
 
         // Overdue action items
         db.execute(sql`
-          SELECT ai.title, ai.priority, ai.due_at,
+          SELECT ai.title, ai.priority,
+                 COALESCE(ai.overdue_at, ai.due_at) AS effective_due,
                  c.name AS company_name, au.name AS owner_name
           FROM action_item ai
           LEFT JOIN pipeline_stage ps ON ps.id = ai.current_stage_id
@@ -70,9 +71,9 @@ export const weeklyDigest = createTool({
           LEFT JOIN companies c ON c.id = aie.entity_id
           LEFT JOIN app_user au ON au.id = ai.owner_user_id
           WHERE ai.enterprise_id = ${enterpriseId}
-            AND ai.due_at < NOW()
+            AND COALESCE(ai.overdue_at, ai.due_at) < NOW()
             AND (ps.bucket IS NULL OR ps.bucket NOT IN ('done', 'archived'))
-          ORDER BY ai.due_at ASC
+          ORDER BY COALESCE(ai.overdue_at, ai.due_at) ASC
           LIMIT 15
         `),
 
@@ -124,7 +125,7 @@ export const weeklyDigest = createTool({
       overdueActionItems: (overdueItems as any[]).map((ai: any) => ({
         title: ai.title,
         priority: ai.priority,
-        dueAt: ai.due_at ? new Date(ai.due_at).toISOString().slice(0, 10) : "—",
+        dueAt: ai.effective_due ? new Date(ai.effective_due).toISOString().slice(0, 10) : "—",
         company: ai.company_name ?? "—",
         owner: ai.owner_name ?? "—",
       })),

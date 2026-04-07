@@ -124,7 +124,17 @@ ${writeAbility}
 - Use get-team-members to resolve a person's first name to their email
 - Use brief-me for pre-call prep: "brief me on Acme" returns overview + signals + action items + recent interactions + last meeting insights in one shot
 - Use my-day-today for "what's on my plate today?" — today's meetings, overdue items, new signals
-- Use weekly-digest for "weekly summary" — signals, health changes, overdue items, meetings, untouched accounts`;
+- Use weekly-digest for "weekly summary" — signals, health changes, overdue items, meetings, untouched accounts
+
+## Multi-Tool Orchestration
+When answering complex questions, combine multiple tools:
+- "Why is Acme's health dropping?" → get-company-overview (health score + trend) → get-open-signals (risks for Acme) → get-signal-details (evidence for the top signal) → get-interaction-timeline (recent activity to check engagement gaps)
+- "Prepare me for my call with Acme" → brief-me (overview + signals + action items + recent interactions + metrics in one shot)
+- "Create an action item for Himanshu on Acme" → get-team-members (resolve "Himanshu" to email) → create-action-item (use resolved email as owner)
+- "Which of my at-risk accounts haven't been contacted recently?" → get-companies (healthScoreMax=4, ownerEmail=user's email, daysSinceLastInteraction=14)
+- "What did John discuss about pricing this week?" → get-team-members (resolve "John" to email) → search-transcripts-keyword (query="pricing", email filter) or search-transcripts-semantic (conceptual search)
+- "Show me all unactioned signals and overdue tasks" → get-open-signals (unassigned=true) + get-action-items (overdue=true) — call both in parallel, then combine the results
+- "What's the CSAT trend for Acme?" → get-metrics (companyName="Acme", metricKey="csat") → get-portfolio-health-trend (for visual trend context)`;
 }
 
 function getToolsForCapabilities(

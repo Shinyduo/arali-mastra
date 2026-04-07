@@ -38,7 +38,9 @@ export const myDayToday = createTool({
 
         // Overdue action items owned by user
         db.execute(sql`
-          SELECT ai.title, ai.priority, ai.due_at, ps.name AS stage_name,
+          SELECT ai.title, ai.priority,
+                 COALESCE(ai.overdue_at, ai.due_at) AS effective_due,
+                 ps.name AS stage_name,
                  c.name AS company_name
           FROM action_item ai
           LEFT JOIN pipeline_stage ps ON ps.id = ai.current_stage_id
@@ -46,15 +48,17 @@ export const myDayToday = createTool({
           LEFT JOIN companies c ON c.id = aie.entity_id
           WHERE ai.enterprise_id = ${enterpriseId}
             AND ai.owner_user_id = ${userId}
-            AND ai.due_at < NOW()
+            AND COALESCE(ai.overdue_at, ai.due_at) < NOW()
             AND (ps.bucket IS NULL OR ps.bucket NOT IN ('done', 'archived'))
-          ORDER BY ai.due_at ASC
+          ORDER BY COALESCE(ai.overdue_at, ai.due_at) ASC
           LIMIT 15
         `),
 
         // Action items due today or this week
         db.execute(sql`
-          SELECT ai.title, ai.priority, ai.due_at, ps.name AS stage_name,
+          SELECT ai.title, ai.priority,
+                 COALESCE(ai.overdue_at, ai.due_at) AS effective_due,
+                 ps.name AS stage_name,
                  c.name AS company_name
           FROM action_item ai
           LEFT JOIN pipeline_stage ps ON ps.id = ai.current_stage_id
@@ -62,10 +66,10 @@ export const myDayToday = createTool({
           LEFT JOIN companies c ON c.id = aie.entity_id
           WHERE ai.enterprise_id = ${enterpriseId}
             AND ai.owner_user_id = ${userId}
-            AND ai.due_at >= NOW()
-            AND ai.due_at <= NOW() + INTERVAL '7 days'
+            AND COALESCE(ai.overdue_at, ai.due_at) >= NOW()
+            AND COALESCE(ai.overdue_at, ai.due_at) <= NOW() + INTERVAL '7 days'
             AND (ps.bucket IS NULL OR ps.bucket NOT IN ('done', 'archived'))
-          ORDER BY ai.due_at ASC
+          ORDER BY COALESCE(ai.overdue_at, ai.due_at) ASC
           LIMIT 10
         `),
 
@@ -94,14 +98,14 @@ export const myDayToday = createTool({
       overdueActionItems: (overdueItems as any[]).map((ai: any) => ({
         title: ai.title,
         priority: ai.priority,
-        dueAt: ai.due_at ? new Date(ai.due_at).toISOString().slice(0, 10) : "—",
+        dueAt: ai.effective_due ? new Date(ai.effective_due).toISOString().slice(0, 10) : "—",
         status: ai.stage_name ?? "—",
         company: ai.company_name ?? "—",
       })),
       upcomingThisWeek: (upcomingItems as any[]).map((ai: any) => ({
         title: ai.title,
         priority: ai.priority,
-        dueAt: ai.due_at ? new Date(ai.due_at).toISOString().slice(0, 10) : "—",
+        dueAt: ai.effective_due ? new Date(ai.effective_due).toISOString().slice(0, 10) : "—",
         company: ai.company_name ?? "—",
       })),
       newSignalsSinceYesterday: (newSignals as any[]).map((s: any) => ({

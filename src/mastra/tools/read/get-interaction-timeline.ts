@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch, pgUuidArray } from "../../../lib/rbac.js";
 
 export const getInteractionTimeline = createTool({
   id: "get-interaction-timeline",
@@ -94,7 +94,7 @@ export const getInteractionTimeline = createTool({
       const participants = await db.execute(sql`
         SELECT p.interaction_id, p.display_name
         FROM participants p
-        WHERE p.interaction_id = ANY(${interactionIds}::uuid[])
+        WHERE p.interaction_id = ANY(${pgUuidArray(interactionIds)})
         ORDER BY p.interaction_id, p.display_name
       `);
       for (const p of participants as any[]) {
