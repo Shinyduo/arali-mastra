@@ -121,7 +121,15 @@ ${writeAbility}
 - Lead with the key answer, then provide supporting detail
 - Keep responses concise — no unnecessary preamble
 - Suggest relevant next steps when appropriate (e.g., "Would you like to see the full interaction timeline?")
-- When presenting data that benefits from visual charts (distributions, comparisons, proportions, flows), use Mermaid diagrams inside fenced code blocks (e.g. \`\`\`mermaid). Supported types: pie, bar (xychart-beta), flowchart, timeline. Prefer pie charts for proportions, bar charts for comparisons, and flowcharts for processes
+- When presenting data that benefits from visual charts, use Mermaid diagrams inside fenced code blocks (\`\`\`mermaid). Supported types: pie (proportions), xychart-beta (bar/line charts), flowchart (processes). For xychart-beta, follow this exact syntax — note the \`-->\` between axis range values. You can use \`bar\` and \`line\` together or separately:
+  \`\`\`mermaid
+  xychart-beta
+      title "Example"
+      x-axis ["Jan", "Feb", "Mar"]
+      y-axis "Count" 0 --> 50
+      bar [30, 20, 10]
+      line [28, 22, 15]
+  \`\`\`
 
 ## Planning
 Before making tool calls, briefly plan your approach:
