@@ -53,8 +53,13 @@ export const getPortfolioHealthTrend = createTool({
     let groupCol = sql`NULL`;
     let groupJoin = sql``;
     if (groupBy === "owner") {
-      groupCol = sql`au.name`;
-      groupJoin = sql`LEFT JOIN companies c ON c.id = emh.entity_id LEFT JOIN app_user au ON au.id = c.owner_user_id`;
+      groupCol = sql`(
+        SELECT au_kr.name FROM key_role_assignments kra
+        JOIN app_user au_kr ON au_kr.id = kra.user_id
+        WHERE kra.entity_type = 'company' AND kra.entity_id = c.id AND kra.end_at IS NULL
+        ORDER BY kra.created_at ASC LIMIT 1
+      )`;
+      groupJoin = sql`LEFT JOIN companies c ON c.id = emh.entity_id`;
     } else if (groupBy === "stage") {
       groupCol = sql`sd.name`;
       groupJoin = sql`LEFT JOIN companies c ON c.id = emh.entity_id LEFT JOIN stage_definition sd ON sd.id = c.stage_definition_id`;

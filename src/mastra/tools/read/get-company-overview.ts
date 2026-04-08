@@ -57,15 +57,24 @@ export const getCompanyOverview = createTool({
         healthScore: companies.healthScore,
         arr: companies.ARR,
         currency: companies.currency,
-        ownerName: appUser.name,
-        ownerEmail: appUser.email,
+        ownerName: sql<string | null>`(
+          SELECT au_kr.name FROM key_role_assignments kra
+          JOIN app_user au_kr ON au_kr.id = kra.user_id
+          WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
+          ORDER BY kra.created_at ASC LIMIT 1
+        )`.as('owner_name'),
+        ownerEmail: sql<string | null>`(
+          SELECT au_kr.email FROM key_role_assignments kra
+          JOIN app_user au_kr ON au_kr.id = kra.user_id
+          WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
+          ORDER BY kra.created_at ASC LIMIT 1
+        )`.as('owner_email'),
         stageName: stageDefinition.name,
         stageKey: stageDefinition.key,
         createdAt: companies.createdAt,
         updatedAt: companies.updatedAt,
       })
       .from(companies)
-      .leftJoin(appUser, eq(companies.ownerUserId, appUser.id))
       .leftJoin(stageDefinition, eq(companies.stageDefinitionId, stageDefinition.id))
       .where(and(...companyConditions))
       .limit(5);

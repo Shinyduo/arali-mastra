@@ -1,7 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
-import { companies, appUser, stageDefinition, entityActivityLogs } from "../../../db/schema.js";
+import { companies, stageDefinition, entityActivityLogs } from "../../../db/schema.js";
 import { eq, and, gte, lte, asc, desc, sql, count } from "drizzle-orm";
 import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
 
@@ -136,7 +136,6 @@ export const getCompanies = createTool({
       "company",
     );
 
-    const owner = appUser;
     const stage = stageDefinition;
 
     // Build custom field filter SQL fragments
@@ -344,15 +343,24 @@ export const getCompanies = createTool({
           domain: companies.domain,
           healthScore: companies.healthScore,
           arr: companies.ARR,
-          ownerName: owner.name,
-          ownerEmail: owner.email,
+          ownerName: sql<string | null>`(
+            SELECT au_kr.name FROM key_role_assignments kra
+            JOIN app_user au_kr ON au_kr.id = kra.user_id
+            WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
+            ORDER BY kra.created_at ASC LIMIT 1
+          )`.as('owner_name'),
+          ownerEmail: sql<string | null>`(
+            SELECT au_kr.email FROM key_role_assignments kra
+            JOIN app_user au_kr ON au_kr.id = kra.user_id
+            WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
+            ORDER BY kra.created_at ASC LIMIT 1
+          )`.as('owner_email'),
           stageName: stage.name,
           stageKey: stage.key,
           updatedAt: companies.updatedAt,
           createdAt: companies.createdAt,
         })
         .from(companies)
-        .leftJoin(owner, eq(companies.ownerUserId, owner.id))
         .leftJoin(stage, eq(companies.stageDefinitionId, stage.id))
         .where(and(...conditions))
         .orderBy(orderFn(sortColumn))
@@ -362,7 +370,6 @@ export const getCompanies = createTool({
       db
         .select({ total: count() })
         .from(companies)
-        .leftJoin(owner, eq(companies.ownerUserId, owner.id))
         .leftJoin(stage, eq(companies.stageDefinitionId, stage.id))
         .where(and(...conditions)),
     ]);
