@@ -22,14 +22,6 @@ export const briefMe = createTool({
     // Resolve company
     const companyRows = await db.execute(sql`
       SELECT c.id, c.name, c.domain, c.health_score, c.arr, c.currency,
-             (SELECT au_kr.name FROM key_role_assignments kra
-              JOIN app_user au_kr ON au_kr.id = kra.user_id
-              WHERE kra.entity_type = 'company' AND kra.entity_id = c.id AND kra.end_at IS NULL
-              ORDER BY kra.created_at ASC LIMIT 1) AS owner_name,
-             (SELECT au_kr.email FROM key_role_assignments kra
-              JOIN app_user au_kr ON au_kr.id = kra.user_id
-              WHERE kra.entity_type = 'company' AND kra.entity_id = c.id AND kra.end_at IS NULL
-              ORDER BY kra.created_at ASC LIMIT 1) AS owner_email,
              sd.name AS stage_name
       FROM companies c
       LEFT JOIN stage_definition sd ON sd.id = c.stage_definition_id
@@ -128,7 +120,6 @@ export const briefMe = createTool({
         arr: company.arr ?? "N/A",
         currency: company.currency ?? "USD",
         stage: company.stage_name ?? "—",
-        owner: company.owner_name ?? "Unassigned",
       },
       keyRoles: (keyRoles as any[]).map((kr: any) => ({
         role: kr.role_name,

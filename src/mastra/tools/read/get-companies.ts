@@ -343,18 +343,6 @@ export const getCompanies = createTool({
           domain: companies.domain,
           healthScore: companies.healthScore,
           arr: companies.ARR,
-          ownerName: sql<string | null>`(
-            SELECT au_kr.name FROM key_role_assignments kra
-            JOIN app_user au_kr ON au_kr.id = kra.user_id
-            WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
-            ORDER BY kra.created_at ASC LIMIT 1
-          )`.as('owner_name'),
-          ownerEmail: sql<string | null>`(
-            SELECT au_kr.email FROM key_role_assignments kra
-            JOIN app_user au_kr ON au_kr.id = kra.user_id
-            WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
-            ORDER BY kra.created_at ASC LIMIT 1
-          )`.as('owner_email'),
           stageName: stage.name,
           stageKey: stage.key,
           updatedAt: companies.updatedAt,
@@ -373,6 +361,38 @@ export const getCompanies = createTool({
         .leftJoin(stage, eq(companies.stageDefinitionId, stage.id))
         .where(and(...conditions)),
     ]);
+
+    // Fetch key roles for returned companies
+    let keyRolesMap: Record<string, Array<{ role: string; roleKey: string; assignee: string; email: string }>> = {};
+    if (rows.length > 0) {
+      const companyIds = rows.map((r) => r.id);
+      const krRows = await db.execute(sql`
+        SELECT
+          kra.entity_id AS company_id,
+          krd.name AS role_name,
+          krd.key AS role_key,
+          au.name AS user_name,
+          au.email AS user_email
+        FROM key_role_assignments kra
+        JOIN key_role_definitions krd ON krd.id = kra.key_role_definition_id
+        JOIN app_user au ON au.id = kra.user_id
+        WHERE kra.entity_type = 'company'
+          AND kra.entity_id = ANY(${companyIds}::uuid[])
+          AND kra.end_at IS NULL
+        ORDER BY krd.display_order, krd.name, au.name
+      `);
+
+      for (const kr of krRows as any[]) {
+        const cid = kr.company_id as string;
+        if (!keyRolesMap[cid]) keyRolesMap[cid] = [];
+        keyRolesMap[cid].push({
+          role: kr.role_name,
+          roleKey: kr.role_key,
+          assignee: kr.user_name,
+          email: kr.user_email,
+        });
+      }
+    }
 
     // Fetch custom fields for returned companies if requested
     let customFieldsMap: Record<string, Record<string, unknown>> = {};
@@ -423,12 +443,15 @@ export const getCompanies = createTool({
     const total = Number(countResult?.total ?? 0);
     return {
       companies: rows.map((r) => {
+        const roles = keyRolesMap[r.id] ?? [];
         const base: Record<string, unknown> = {
           name: r.name,
           domain: r.domain ?? "—",
           healthScore: r.healthScore ?? "N/A",
           arr: r.arr ?? "N/A",
-          owner: r.ownerName ?? "Unassigned",
+          keyRoles: roles.length > 0
+            ? roles.map((kr) => `${kr.role}: ${kr.assignee}`)
+            : ["Unassigned"],
           stage: r.stageName ?? "—",
           addedOn: r.createdAt?.toISOString().slice(0, 10) ?? "—",
           lastUpdated: r.updatedAt?.toISOString().slice(0, 10) ?? "—",

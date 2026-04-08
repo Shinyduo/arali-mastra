@@ -57,18 +57,6 @@ export const getCompanyOverview = createTool({
         healthScore: companies.healthScore,
         arr: companies.ARR,
         currency: companies.currency,
-        ownerName: sql<string | null>`(
-          SELECT au_kr.name FROM key_role_assignments kra
-          JOIN app_user au_kr ON au_kr.id = kra.user_id
-          WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
-          ORDER BY kra.created_at ASC LIMIT 1
-        )`.as('owner_name'),
-        ownerEmail: sql<string | null>`(
-          SELECT au_kr.email FROM key_role_assignments kra
-          JOIN app_user au_kr ON au_kr.id = kra.user_id
-          WHERE kra.entity_type = 'company' AND kra.entity_id = ${companies.id} AND kra.end_at IS NULL
-          ORDER BY kra.created_at ASC LIMIT 1
-        )`.as('owner_email'),
         stageName: stageDefinition.name,
         stageKey: stageDefinition.key,
         createdAt: companies.createdAt,
@@ -92,7 +80,6 @@ export const getCompanyOverview = createTool({
         matches: matchedCompanies.map((c) => ({
           name: c.name,
           domain: c.domain ?? "—",
-          owner: c.ownerName ?? "Unassigned",
         })),
       };
     }
@@ -213,8 +200,6 @@ export const getCompanyOverview = createTool({
         arr: company.arr ?? "N/A",
         currency: company.currency ?? "USD",
         stage: company.stageName ?? "—",
-        owner: company.ownerName ?? "Unassigned",
-        ownerEmail: company.ownerEmail ?? "—",
         createdAt: company.createdAt?.toISOString().slice(0, 10) ?? "—",
       },
       customFields:
