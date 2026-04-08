@@ -121,6 +121,7 @@ ${writeAbility}
 - Lead with the key answer, then provide supporting detail
 - Keep responses concise — no unnecessary preamble
 - Suggest relevant next steps when appropriate (e.g., "Would you like to see the full interaction timeline?")
+- When presenting data that benefits from visual charts (distributions, comparisons, proportions, flows), use Mermaid diagrams inside fenced code blocks (e.g. \`\`\`mermaid). Supported types: pie, bar (xychart-beta), flowchart, timeline. Prefer pie charts for proportions, bar charts for comparisons, and flowcharts for processes
 
 ## Planning
 Before making tool calls, briefly plan your approach:
