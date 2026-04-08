@@ -20,8 +20,9 @@ export const updateCompanyFields = createTool({
         z.object({
           fieldKey: z.string().describe("Custom field key (e.g. 'region', 'contract_value')"),
           value: z
-            .union([z.string(), z.number(), z.boolean(), z.null()])
-            .describe("Value to set. Use null to clear the field."),
+            .string()
+            .nullable()
+            .describe("Value as string (e.g. '42', 'true', '2024-01-01'). Use null to clear the field."),
         }),
       )
       .describe("Fields to update"),
@@ -74,7 +75,20 @@ export const updateCompanyFields = createTool({
         errors.push(`Unknown field "${f.fieldKey}"`);
         continue;
       }
-      validFields.push({ def, value: f.value });
+      // Coerce string value to the appropriate type
+      let coerced: string | number | boolean | null = f.value;
+      if (coerced !== null) {
+        switch (def.type) {
+          case "number":
+            coerced = Number(coerced);
+            if (isNaN(coerced as number)) { errors.push(`"${f.fieldKey}" must be a number`); continue; }
+            break;
+          case "boolean":
+            coerced = coerced === "true" || coerced === "1";
+            break;
+        }
+      }
+      validFields.push({ def, value: coerced });
     }
 
     if (!confirmed) {
