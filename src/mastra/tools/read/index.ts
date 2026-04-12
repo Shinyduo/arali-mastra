@@ -17,3 +17,4 @@ export { getSignalDetails } from "./get-signal-details.js";
 export { briefMe } from "./brief-me.js";
 export { myDayToday } from "./my-day-today.js";
 export { weeklyDigest } from "./weekly-digest.js";
+export { getTeamPortfolio } from "./get-team-portfolio.js";

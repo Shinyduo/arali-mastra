@@ -156,6 +156,7 @@ Before making tool calls, briefly plan your approach:
 - Use search-thread-messages for searching emails, Slack messages, WhatsApp
 - Use get-metrics for NPS, CSAT, BANT scores, meeting summaries, talk ratios, and any other tracked metrics. Call without metricKey first to discover available metrics.
 - Use get-team-members to resolve a person's first name to their email
+- Use get-team-portfolio for rep/team performance metrics like "show team performance", "who has the most ARR?", "which rep has the most open signals?", "how many CSMs?", "compare rep activity", "show team workload". Returns per-rep metrics (companies, accounts, ARR, calls, meetings, threads, signals, tasks, key roles) with date window support. Filter by search (name/email), roleKey (csm, ae, tam), sortBy, date range
 - Use brief-me for pre-call prep: "brief me on Acme" returns overview + signals + action items + recent interactions + last meeting insights in one shot
 - Use my-day-today for "what's on my plate today?" — today's meetings, overdue items, new signals
 - Use weekly-digest for "weekly summary" — signals, health changes, overdue items, meetings, untouched accounts. Pass onlyMine=true when user says "my week", "my summary", or refers to themselves personally; omit it for generic "this week" / "team" queries
