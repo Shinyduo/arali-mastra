@@ -12,12 +12,26 @@ import { randomUUID } from "node:crypto";
 const BASE_URL = process.env.MCP_BASE_URL ?? "http://localhost:4111";
 const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 
-/** GET /.well-known/oauth-protected-resource — Resource Server metadata (RFC 9728) */
+/** GET /.well-known/oauth-protected-resource — Resource Server metadata (RFC 9728, spec 6/18) */
 export async function handleProtectedResourceMetadata(c: Context) {
   return c.json({
     resource: BASE_URL,
     authorization_servers: [APP_URL],
     bearer_methods_supported: ["header"],
+  });
+}
+
+/** GET /.well-known/oauth-authorization-server — fallback for older spec (3/26) */
+export async function handleAuthServerMetadata(c: Context) {
+  return c.json({
+    issuer: BASE_URL,
+    authorization_endpoint: `${APP_URL}/mcp-login`,
+    token_endpoint: `${APP_URL}/api/v1/auth/mcp-token-exchange`,
+    registration_endpoint: `${BASE_URL}/oauth/register`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code"],
+    token_endpoint_auth_methods_supported: ["none"],
+    code_challenge_methods_supported: ["S256"],
   });
 }
 
