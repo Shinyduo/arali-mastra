@@ -2,8 +2,13 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { MastraServer } from "@mastra/hono";
 import { mastra } from "./mastra/index.js";
+import { clusteringRoutes } from "./clustering/routes.js";
 
 const app = new Hono();
+
+// Mount clustering routes (no auth — called by pgboss)
+app.route("/", clusteringRoutes);
+
 const server = new MastraServer({ app, mastra });
 
 await server.registerRoutes();
