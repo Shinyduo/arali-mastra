@@ -21,6 +21,7 @@
     "@mastra/hono": "^1.4.0",
     "@mastra/memory": "^1.13.0",
     "@mastra/pg": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@openrouter/ai-sdk-provider": "^2.5.0",
     "ai": "^6.0.146",
     "dotenv": "^16.6.1",
