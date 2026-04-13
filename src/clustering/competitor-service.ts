@@ -303,7 +303,7 @@ async function mergeSimilarClusters(
   // Sort by size desc, then created_at
   clusters.sort((a, b) => {
     if (b.size !== a.size) return b.size - a.size;
-    return a.createdAt.getTime() - b.createdAt.getTime();
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
   let merges = 0;

@@ -179,7 +179,11 @@ export async function labelCluster(payload: LabelPayload): Promise<LabelResult> 
   }
   userPromptLines.push("Return strict JSON with keys name, description, type.");
 
-  const openrouter = createOpenRouter({ apiKey });
+  const openrouter = createOpenRouter({
+    apiKey,
+    appName: "arali-clustering",
+    appUrl: "https://arali.ai",
+  });
 
   const { object } = await generateObject({
     model: openrouter(LABELER_MODEL),

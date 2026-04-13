@@ -42,7 +42,7 @@ export async function fetchInsight(insightId: string): Promise<InsightRow | null
     detailsJson: (r.details_json as Record<string, unknown>) ?? null,
     embedding: vectorFromDb(r.embedding),
     clusterId: r.cluster_id ? String(r.cluster_id) : null,
-    createdAt: r.created_at as Date,
+    createdAt: new Date(r.created_at as string),
   };
 }
 
@@ -595,11 +595,11 @@ function mapClusterRow(r: Record<string, unknown>): InsightCluster {
     metricKey: String(r.metric_key),
     centroid: vectorFromDb(r.centroid) ?? new Array<number>(EMBEDDING_DIMENSION).fill(0),
     size: Number(r.size),
-    createdAt: r.created_at as Date,
+    createdAt: new Date(r.created_at as string),
     isSeeded: Boolean(r.is_seeded),
     mergedInto: r.merged_into ? String(r.merged_into) : null,
-    mergedAt: r.merged_at ? (r.merged_at as Date) : null,
-    firstSeenAt: r.first_seen_at ? (r.first_seen_at as Date) : null,
+    mergedAt: r.merged_at ? new Date(r.merged_at as string) : null,
+    firstSeenAt: r.first_seen_at ? new Date(r.first_seen_at as string) : null,
     metadata: parsedMeta,
     name: r.name ? String(r.name) : null,
     description: r.description ? String(r.description) : null,
@@ -616,6 +616,6 @@ function mapInsightRow(r: Record<string, unknown>): InsightRow {
     detailsJson: (r.details_json as Record<string, unknown>) ?? null,
     embedding: vectorFromDb(r.embedding),
     clusterId: r.cluster_id ? String(r.cluster_id) : null,
-    createdAt: r.created_at as Date,
+    createdAt: new Date(r.created_at as string),
   };
 }

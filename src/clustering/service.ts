@@ -405,8 +405,8 @@ async function mergeClusters(
 ): Promise<number> {
   const clusters = await repo.fetchClusters(enterpriseId, metricKey);
   clusters.sort((a, b) => {
-    const aTime = a.firstSeenAt?.getTime() ?? a.createdAt.getTime();
-    const bTime = b.firstSeenAt?.getTime() ?? b.createdAt.getTime();
+    const aTime = new Date(a.firstSeenAt ?? a.createdAt).getTime();
+    const bTime = new Date(b.firstSeenAt ?? b.createdAt).getTime();
     return aTime - bTime;
   });
 
