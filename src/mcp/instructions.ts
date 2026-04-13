@@ -11,9 +11,18 @@ export const MCP_INSTRUCTIONS = `You are connected to Arali CRM. You have access
 - "my companies" or "my accounts" = filter to companies assigned to the authenticated user
 - When referring to a person by first name, use get-team-members to resolve their email first
 
-## Response Size
-- For listing queries, use limit=4 and offer to show more
-- Only use higher limits when explicitly asked ("show me all", "show me 10")
+## Timezone Handling
+- All timestamps in the database are stored in UTC
+- Most users are in IST (UTC+5:30). When a user says "today" (e.g. April 13), records created after 18:30 UTC on April 12 are actually April 13 in IST
+- For "today" queries: set createdAfter to YESTERDAY's date to avoid missing records from the timezone gap. For example, if today is April 13, use createdAfter="2026-04-12"
+- For "this week" queries: extend the start date by 1 day earlier for the same reason
+- When displaying dates back to the user, note that the raw date shown may be 1 day behind their local date
+
+## Response Size & Exhaustiveness
+- For simple overviews ("show me at-risk companies"), use limit=4 and offer to show more
+- For queries that imply completeness ("what was updated today?", "show me all new contacts", "which companies changed?"), use limit=25 to avoid missing data
+- NEVER assume the first result set is exhaustive. If the user questions completeness, immediately retry with a higher limit
+- When totalCount > the number of results shown, always tell the user how many more exist
 
 ## Formatting Rules
 - Never show raw UUIDs — always use display names
