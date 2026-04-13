@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companies, stageDefinition, entityActivityLogs } from "../../../db/schema.js";
 import { eq, and, gte, lte, asc, desc, sql, count } from "drizzle-orm";
-import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch, pgUuidArray } from "../../../lib/rbac.js";
 
 export const getCompanies = createTool({
   id: "get-companies",
@@ -377,7 +377,7 @@ export const getCompanies = createTool({
         JOIN key_role_definitions krd ON krd.id = kra.key_role_definition_id
         JOIN app_user au ON au.id = kra.user_id
         WHERE kra.entity_type = 'company'
-          AND kra.entity_id = ANY(${companyIds}::uuid[])
+          AND kra.entity_id = ANY(${pgUuidArray(companyIds)})
           AND kra.end_at IS NULL
         ORDER BY krd.display_order, krd.name, au.name
       `);
