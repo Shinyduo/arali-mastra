@@ -127,7 +127,7 @@ export async function bootstrap(
 
   console.log(`[clustering] Bootstrap for ${enterpriseId} (${metricKey})`);
 
-  // Fetch all insights with embeddings
+  // Fetch insights with embeddings (capped at 2000 to avoid OOM)
   const allData = await repo.fetchEmbeddingsForPair(enterpriseId, metricKey);
   if (allData.length === 0) {
     console.log(`[clustering] Bootstrap: no insights with embeddings`);
@@ -136,9 +136,10 @@ export async function bootstrap(
 
   console.log(`[clustering] Bootstrap: ${allData.length} insights`);
 
-  // Agglomerative clustering
-  const vectors = allData.map((d) => d.embedding);
+  // Extract vectors and ids, then free the combined objects
   const ids = allData.map((d) => d.id);
+  const vectors = allData.map((d) => d.embedding);
+  allData.length = 0; // free references
   const threshold = DISTANCE_THRESHOLDS[metricKey] ?? DEFAULT_DISTANCE_THRESHOLD;
   const labels = agglomerativeClustering(vectors, { distanceThreshold: threshold });
 
