@@ -2364,6 +2364,7 @@ export const accounts = pgTable(
     healthScoreComputedAt: timestamptz("health_score_computed_at"),
     healthScoreBreakdown: jsonb("health_score_breakdown"),
     ARR: integer("arr"),
+    currency: text("currency"),
 
     externalId: text("external_id"),
 
