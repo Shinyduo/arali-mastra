@@ -8,7 +8,7 @@ import type { RequestContext } from "@mastra/core/request-context";
 import { araliAgent } from "./agents/arali-agent.js";
 
 // Paths that skip JWT auth (studio UI, health checks, static assets)
-const PUBLIC_PATHS = ["/studio", "/health", "/assets", "/mastra.svg"];
+const PUBLIC_PATHS = ["/studio", "/health", "/assets", "/mastra.svg", "/clustering"];
 
 const authMiddleware = createMiddleware(async (c, next) => {
   const path = c.req.path;
