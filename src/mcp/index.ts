@@ -1,2 +1,2 @@
-export { registerMcpRoutes } from "./server.js";
-export { oauthRoutes } from "./oauth.js";
+export { handleOAuthMetadata, handleOAuthRegister } from "./oauth.js";
+export { handleMcp } from "./server.js";

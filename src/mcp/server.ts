@@ -1,10 +1,10 @@
 /**
- * MCP server factory + Hono route registration.
+ * MCP server factory + handler.
  * Creates per-session McpServer instances with user context baked in.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import type { Hono } from "hono";
+import type { Context } from "hono";
 import { verifyJwt } from "../lib/jwt.js";
 import {
   getUserCapabilities,
@@ -35,7 +35,7 @@ function createAraliMcpServer(userContext: AraliRuntimeContext): McpServer {
   return server;
 }
 
-// Session management: per-session transport + server
+// Session management
 interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
@@ -46,9 +46,7 @@ const sessions = new Map<string, McpSession>();
 /**
  * Resolves a Bearer JWT into a full AraliRuntimeContext.
  */
-async function resolveUserContext(
-  token: string,
-): Promise<AraliRuntimeContext> {
+async function resolveUserContext(token: string): Promise<AraliRuntimeContext> {
   const claims = await verifyJwt(token);
 
   const enterpriseId = (claims.selectedEnterpriseId ||
@@ -75,53 +73,47 @@ async function resolveUserContext(
 }
 
 /**
- * Registers MCP routes on the Hono app.
- *
- * - app.all("/mcp") — MCP Streamable HTTP endpoint
- *   Auth: Bearer JWT in Authorization header
- *   Sessions: stateful, keyed by mcp-session-id header
+ * MCP handler — registered via registerApiRoute as ALL /mcp.
  */
-export function registerMcpRoutes(app: Hono) {
-  app.all("/mcp", async (c) => {
-    const sessionId = c.req.header("mcp-session-id");
+export async function handleMcp(c: Context) {
+  const sessionId = c.req.header("mcp-session-id");
 
-    // Reuse existing session
-    if (sessionId && sessions.has(sessionId)) {
-      const session = sessions.get(sessionId)!;
-      const response = await session.transport.handleRequest(c.req.raw);
-      return response;
-    }
-
-    // New session — authenticate first
-    const authHeader = c.req.header("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "Missing or invalid Authorization header" }, 401);
-    }
-
-    let userContext: AraliRuntimeContext;
-    try {
-      userContext = await resolveUserContext(authHeader.slice(7));
-    } catch {
-      return c.json({ error: "Invalid or expired token" }, 401);
-    }
-
-    // Create per-session MCP server + transport
-    const server = createAraliMcpServer(userContext);
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      sessionIdGenerator: () => crypto.randomUUID(),
-      onsessioninitialized: (id) => {
-        sessions.set(id, { transport, server });
-        console.log(`MCP session started: ${id} (user: ${userContext.userEmail})`);
-      },
-      onsessionclosed: (id) => {
-        sessions.delete(id);
-        console.log(`MCP session closed: ${id}`);
-      },
-    });
-
-    await server.connect(transport);
-
-    const response = await transport.handleRequest(c.req.raw);
+  // Reuse existing session
+  if (sessionId && sessions.has(sessionId)) {
+    const session = sessions.get(sessionId)!;
+    const response = await session.transport.handleRequest(c.req.raw);
     return response;
+  }
+
+  // New session — authenticate first
+  const authHeader = c.req.header("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ error: "Missing or invalid Authorization header" }, 401);
+  }
+
+  let userContext: AraliRuntimeContext;
+  try {
+    userContext = await resolveUserContext(authHeader.slice(7));
+  } catch {
+    return c.json({ error: "Invalid or expired token" }, 401);
+  }
+
+  // Create per-session MCP server + transport
+  const server = createAraliMcpServer(userContext);
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: () => crypto.randomUUID(),
+    onsessioninitialized: (id) => {
+      sessions.set(id, { transport, server });
+      console.log(`MCP session started: ${id} (user: ${userContext.userEmail})`);
+    },
+    onsessionclosed: (id) => {
+      sessions.delete(id);
+      console.log(`MCP session closed: ${id}`);
+    },
   });
+
+  await server.connect(transport);
+
+  const response = await transport.handleRequest(c.req.raw);
+  return response;
 }

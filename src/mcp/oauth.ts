@@ -1,18 +1,15 @@
 /**
- * Minimal OAuth endpoints on arali-mastra.
- * Only the metadata + register live here (must be same origin as /mcp).
- * All actual auth happens on arali-main.
+ * OAuth handler functions for MCP authentication.
+ * These are registered via registerApiRoute in mastra/index.ts.
  */
-import { Hono } from "hono";
+import type { Context } from "hono";
 import { randomUUID } from "node:crypto";
 
 const BASE_URL = process.env.MCP_BASE_URL ?? "http://localhost:4111";
 const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
 
-export const oauthRoutes = new Hono();
-
-// --- OAuth metadata (must be same origin as /mcp) ---
-oauthRoutes.get("/.well-known/oauth-authorization-server", (c) => {
+/** GET /.well-known/oauth-authorization-server */
+export async function handleOAuthMetadata(c: Context) {
   return c.json({
     issuer: BASE_URL,
     authorization_endpoint: `${APP_URL}/mcp-login`,
@@ -23,10 +20,10 @@ oauthRoutes.get("/.well-known/oauth-authorization-server", (c) => {
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
   });
-});
+}
 
-// --- Client registration (no-op) ---
-oauthRoutes.post("/oauth/register", async (c) => {
+/** POST /oauth/register */
+export async function handleOAuthRegister(c: Context) {
   const body = await c.req.json().catch(() => ({}));
   const { client_name = "unknown", redirect_uris = [] } = body as {
     client_name?: string;
@@ -42,4 +39,4 @@ oauthRoutes.post("/oauth/register", async (c) => {
     response_types: ["code"],
     token_endpoint_auth_method: "none",
   }, 201);
-});
+}

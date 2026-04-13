@@ -2,14 +2,8 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { MastraServer } from "@mastra/hono";
 import { mastra } from "./mastra/index.js";
-import { registerMcpRoutes, oauthRoutes } from "./mcp/index.js";
 
 const app = new Hono();
-
-// Mount OAuth + MCP routes before Mastra (skip Mastra's auth middleware)
-app.route("/", oauthRoutes);
-registerMcpRoutes(app);
-
 const server = new MastraServer({ app, mastra });
 
 await server.registerRoutes();
