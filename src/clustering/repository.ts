@@ -354,6 +354,7 @@ export async function listClusterEnterprises(
 export async function fetchEmbeddingsForPair(
   enterpriseId: string,
   metricKey: string,
+  limit = 2000,
 ): Promise<Array<{ id: string; embedding: number[] }>> {
   const rows = await db.execute(sql`
     SELECT id, embedding
@@ -361,6 +362,8 @@ export async function fetchEmbeddingsForPair(
     WHERE enterprise_id = ${enterpriseId}::uuid
       AND metric_key = ${metricKey}
       AND embedding IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT ${limit}
   `);
   return (rows as unknown as Array<{ id: string; embedding: unknown }>).map((r) => ({
     id: String(r.id),
@@ -371,6 +374,7 @@ export async function fetchEmbeddingsForPair(
 export async function fetchUnclusteredEmbeddings(
   enterpriseId: string,
   metricKey: string,
+  limit = 1000,
 ): Promise<Array<{ id: string; embedding: number[] }>> {
   const rows = await db.execute(sql`
     SELECT id, embedding
@@ -379,6 +383,8 @@ export async function fetchUnclusteredEmbeddings(
       AND metric_key = ${metricKey}
       AND embedding IS NOT NULL
       AND cluster_id IS NULL
+    ORDER BY created_at DESC
+    LIMIT ${limit}
   `);
   return (rows as unknown as Array<{ id: string; embedding: unknown }>).map((r) => ({
     id: String(r.id),
