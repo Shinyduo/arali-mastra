@@ -88,7 +88,15 @@ export async function handleMcp(c: Context) {
   // New session — authenticate first
   const authHeader = c.req.header("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return c.json({ error: "Missing or invalid Authorization header" }, 401);
+    const BASE_URL = process.env.MCP_BASE_URL ?? "http://localhost:4111";
+    // RFC 9728: WWW-Authenticate header points to protected resource metadata
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: {
+        "Content-Type": "application/json",
+        "WWW-Authenticate": `Bearer resource_metadata="${BASE_URL}/.well-known/oauth-protected-resource"`,
+      },
+    });
   }
 
   let userContext: AraliRuntimeContext;

@@ -17,7 +17,7 @@ import {
 import { runOnline, runDaily, runWeeklyMaintenance } from "../clustering/tasks.js";
 import { bootstrap } from "../clustering/service.js";
 import { getEmergingTrends } from "../clustering/trends.js";
-import { handleOAuthMetadata, handleOAuthRegister, handleMcp } from "../mcp/index.js";
+import { handleProtectedResourceMetadata, handleOAuthRegister, handleMcp } from "../mcp/index.js";
 
 // Paths that skip JWT auth (studio UI, health checks, static assets)
 const PUBLIC_PATHS = ["/studio", "/health", "/assets", "/mastra.svg", "/clustering", "/mcp", "/oauth", "/.well-known"];
@@ -165,10 +165,10 @@ export const mastra = new Mastra({
       }),
 
       // --- MCP OAuth + Server ---
-      registerApiRoute("/.well-known/oauth-authorization-server", {
+      registerApiRoute("/.well-known/oauth-protected-resource", {
         method: "GET",
         requiresAuth: false,
-        handler: handleOAuthMetadata,
+        handler: handleProtectedResourceMetadata,
       }),
       registerApiRoute("/oauth/register", {
         method: "POST",
