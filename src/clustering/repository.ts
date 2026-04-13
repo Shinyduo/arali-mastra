@@ -354,16 +354,15 @@ export async function listClusterEnterprises(
 export async function fetchEmbeddingsForPair(
   enterpriseId: string,
   metricKey: string,
-  limit = 2000,
 ): Promise<Array<{ id: string; embedding: number[] }>> {
+  // No limit — bootstrap needs all insights for full clustering.
+  // Vectors are parsed lazily per-row to reduce peak memory.
   const rows = await db.execute(sql`
     SELECT id, embedding
     FROM meeting_insights
     WHERE enterprise_id = ${enterpriseId}::uuid
       AND metric_key = ${metricKey}
       AND embedding IS NOT NULL
-    ORDER BY created_at DESC
-    LIMIT ${limit}
   `);
   return (rows as unknown as Array<{ id: string; embedding: unknown }>).map((r) => ({
     id: String(r.id),
