@@ -33,7 +33,7 @@ export const MCP_INSTRUCTIONS = `You are connected to Arali CRM. You have access
 - get-company-overview: single company deep dive
 - get-companies: lists, comparisons, filtered queries. Supports: health trend (declining/improving/stable), no-owner filter, days since last interaction, creation date range, daysSinceStageChange
 - get-action-items: tasks/to-dos. Supports: unassigned, overdue, due date range, sort by dueAt/createdAt/priority
-- get-insights: feature requests, objections, competitor mentions
+- get-insights: feature requests, objections, appreciations, competitor mentions. Use clusterNameQuery (fuzzy) for named entities like competitors ("Snowflake"); use semanticQuery for conceptual queries ("features about performance", "objections around pricing"); metricKey values are feature_reception, objections_handling, appreciation_moments, competitor_mentions
 - get-open-signals: risk/opportunity signals. Supports: unassigned, overdue, first-seen date range
 - get-contacts: contact/people/lead queries. Supports: creation date range
 - get-signal-details: WHY a signal exists — occurrences, linked interactions, transcript evidence
@@ -43,7 +43,8 @@ export const MCP_INSTRUCTIONS = `You are connected to Arali CRM. You have access
 - get-billing-overview: subscriptions, plans, MRR, invoices
 - get-tickets: support tickets with resolution times
 - get-portfolio-health-trend: health score trends over time
-- search-thread-messages: search emails, Slack, WhatsApp messages
+- search-thread-messages: hybrid (keyword + semantic via RRF) search across emails, Slack, WhatsApp. Works for exact phrases and conceptual queries
+- search-ticket-messages: hybrid (keyword + semantic via RRF) search across support ticket messages
 - get-metrics: NPS, CSAT, BANT scores, meeting summaries. Call without metricKey first to discover available metrics
 - get-team-members: resolve first names to emails
 - get-team-portfolio: rep/team performance metrics (companies, ARR, calls, meetings, signals, tasks). Filter by roleKey, sortBy, date range
@@ -55,10 +56,14 @@ export const MCP_INSTRUCTIONS = `You are connected to Arali CRM. You have access
 - create-action-item: create task with owner, pipeline, priority
 - update-action-item-stage: move task to a different stage
 - dismiss-signal: dismiss a signal
+- create-company: create a new company (via public API, fires workflows)
 - update-company-stage: change company lifecycle stage
-- assign-key-role: assign user to company key role
+- update-company-fields: update custom field values on a company
+- create-contact: create a new contact (via public API)
+- update-contact-stage: change contact lifecycle stage
+- update-contact-fields: update custom field values on a contact
+- assign-key-role: assign user to company/account key role
 - create-entity-note: add note to company/contact/account
-- update-company-fields: update custom field values
 
 ## Multi-Tool Orchestration
 - "Why is health dropping?" → get-company-overview → get-open-signals → get-signal-details → get-interaction-timeline
@@ -70,4 +75,5 @@ export const MCP_INSTRUCTIONS = `You are connected to Arali CRM. You have access
 ## Tool Limitations
 - If a filter doesn't exist, use the closest available and explain the limitation
 - Never retry the same call repeatedly — answer with what you found
-- If results are empty, suggest alternatives (different stage name, broader time range)`;
+- If results are empty, suggest alternatives (different stage name, broader time range)
+- If a tool returns \`{ error, toolId }\`, the tool failed server-side. Do NOT retry the exact same call — either try a different approach, relax the filters, or tell the user the tool is currently unavailable`;
