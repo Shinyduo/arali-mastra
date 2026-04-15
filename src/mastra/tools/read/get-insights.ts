@@ -1,14 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
-import {
-  meetingInsights,
-  insightClusters,
-  interactions,
-  interactionCompany,
-  companies,
-} from "../../../db/schema.js";
-import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { openai } from "@ai-sdk/openai";
 import { embed } from "ai";
 import {
@@ -22,10 +15,10 @@ export const getInsights = createTool({
   id: "get-insights",
   description:
     "Get AI-extracted meeting insights: feature reception, objections, appreciations, competitor mentions. " +
-    "For named-entity lookups ('mentions of Snowflake') use `clusterNameQuery` — fuzzy-matches cluster labels. " +
+    "For named-entity lookups ('mentions of Snowflake') use clusterNameQuery — fuzzy-matches cluster labels. " +
     "For conceptual queries ('features about performance', 'objections around pricing', 'appreciations for onboarding') " +
-    "use `semanticQuery` — embeds the query and ranks insights by vector similarity. " +
-    "Without either, returns clusters grouped by count. Combine with `metricKey` to narrow the type.",
+    "use semanticQuery — embeds the query and ranks insights by vector similarity. " +
+    "Without either, returns clusters grouped by count. Combine with metricKey to narrow the type.",
   inputSchema: z.object({
     metricKey: z
       .enum([
@@ -75,42 +68,41 @@ export const getInsights = createTool({
     const limit = input.limit ?? 30;
     const groupByCluster = input.groupByCluster ?? true;
 
-    const conditions = [
-      eq(meetingInsights.enterpriseId, enterpriseId),
-      input.metricKey
-        ? eq(meetingInsights.metricKey, input.metricKey)
-        : undefined,
-      input.startDate
-        ? gte(meetingInsights.createdAt, new Date(input.startDate))
-        : undefined,
-      input.endDate
-        ? lte(meetingInsights.createdAt, new Date(input.endDate))
-        : undefined,
-      input.companyName
-        ? sql`EXISTS (
-            SELECT 1 FROM interaction_company ic
-            JOIN companies c ON c.id = ic.company_id
-            WHERE ic.interaction_id = ${meetingInsights.interactionId}
-              AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}
-          )`
-        : undefined,
-      input.clusterNameQuery
-        ? sql`EXISTS (
-            SELECT 1 FROM insight_clusters icl
-            WHERE icl.id = ${meetingInsights.clusterId}
-              AND ${fuzzyNameMatch(sql`icl.name`, input.clusterNameQuery)}
-          )`
-        : undefined,
-      !getCompanyScope(capabilities)?.enterprise
-        ? sql`EXISTS (
-            SELECT 1 FROM interaction_company ic
-            WHERE ic.interaction_id = ${meetingInsights.interactionId}
-              AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`ic.company_id` as any) ?? sql`TRUE`}
-          )`
-        : undefined,
-    ].filter(Boolean);
+    const scope = getCompanyScope(capabilities);
 
-    // Semantic search branch — rank individual insights by vector distance
+    const metricKeyFilter = input.metricKey
+      ? sql`AND mi.metric_key = ${input.metricKey}`
+      : sql``;
+    const startFilter = input.startDate
+      ? sql`AND mi.created_at >= ${input.startDate}::date`
+      : sql``;
+    const endFilter = input.endDate
+      ? sql`AND mi.created_at < (${input.endDate}::date + INTERVAL '1 day')`
+      : sql``;
+    const companyFilter = input.companyName
+      ? sql`AND EXISTS (
+          SELECT 1 FROM interaction_company ic
+          JOIN companies c ON c.id = ic.company_id
+          WHERE ic.interaction_id = mi.interaction_id
+            AND ${fuzzyNameMatch(sql`c.name`, input.companyName)}
+        )`
+      : sql``;
+    const clusterNameFilter = input.clusterNameQuery
+      ? sql`AND EXISTS (
+          SELECT 1 FROM insight_clusters icl2
+          WHERE icl2.id = mi.cluster_id
+            AND ${fuzzyNameMatch(sql`icl2.name`, input.clusterNameQuery)}
+        )`
+      : sql``;
+    const rbacFilter = !scope?.enterprise
+      ? sql`AND EXISTS (
+          SELECT 1 FROM interaction_company ic
+          WHERE ic.interaction_id = mi.interaction_id
+            AND ${buildKeyRoleScopeClause(scope, userId, "company", sql`ic.company_id` as any) ?? sql`TRUE`}
+        )`
+      : sql``;
+
+    // Semantic branch — rank individual insights by vector distance
     if (input.semanticQuery) {
       const { embedding } = await embed({
         model: openai.embedding("text-embedding-3-large"),
@@ -118,33 +110,35 @@ export const getInsights = createTool({
       });
       const vectorStr = `[${embedding.join(",")}]`;
 
-      conditions.push(sql`${meetingInsights.embedding} IS NOT NULL`);
-
-      const rows = await db
-        .select({
-          metricKey: meetingInsights.metricKey,
-          details: meetingInsights.detailsJson,
-          clusterName: sql<string>`ic_cl.name`.as("cluster_name"),
-          createdAt: meetingInsights.createdAt,
-          similarity: sql<number>`1 - (${meetingInsights.embedding} <=> ${vectorStr}::vector)`.as(
-            "similarity",
-          ),
-        })
-        .from(meetingInsights)
-        .leftJoin(
-          sql`insight_clusters ic_cl`,
-          sql`ic_cl.id = ${meetingInsights.clusterId}`,
-        )
-        .where(and(...conditions))
-        .orderBy(sql`${meetingInsights.embedding} <=> ${vectorStr}::vector ASC`)
-        .limit(limit);
+      const rows = await db.execute(sql`
+        SELECT
+          mi.metric_key,
+          mi.details_json,
+          mi.created_at,
+          ic_cl.name AS cluster_name,
+          1 - (mi.embedding <=> ${vectorStr}::vector) AS similarity
+        FROM meeting_insights mi
+        LEFT JOIN insight_clusters ic_cl ON ic_cl.id = mi.cluster_id
+        WHERE mi.enterprise_id = ${enterpriseId}
+          AND mi.embedding IS NOT NULL
+          ${metricKeyFilter}
+          ${startFilter}
+          ${endFilter}
+          ${companyFilter}
+          ${clusterNameFilter}
+          ${rbacFilter}
+        ORDER BY mi.embedding <=> ${vectorStr}::vector ASC
+        LIMIT ${limit}
+      `);
 
       return {
-        insights: rows.map((r) => ({
-          type: r.metricKey,
-          cluster: r.clusterName ?? "Unclustered",
-          details: r.details,
-          date: r.createdAt?.toISOString().slice(0, 10) ?? "—",
+        insights: (rows as any[]).map((r: any) => ({
+          type: r.metric_key,
+          cluster: r.cluster_name ?? "Unclustered",
+          details: r.details_json,
+          date: r.created_at
+            ? new Date(r.created_at).toISOString().slice(0, 10)
+            : "—",
           similarity:
             r.similarity != null ? Number(r.similarity).toFixed(3) : "—",
         })),
@@ -152,58 +146,66 @@ export const getInsights = createTool({
     }
 
     if (groupByCluster) {
-      const rows = await db
-        .select({
-          clusterName: sql<string>`ic_cl.name`.as("cluster_name"),
-          metricKey: meetingInsights.metricKey,
-          insightCount: count(),
-          latestAt: sql<Date>`MAX(${meetingInsights.createdAt})`.as("latest_at"),
-        })
-        .from(meetingInsights)
-        .leftJoin(
-          sql`insight_clusters ic_cl`,
-          sql`ic_cl.id = ${meetingInsights.clusterId}`,
-        )
-        .where(and(...conditions))
-        .groupBy(sql`ic_cl.name`, meetingInsights.metricKey)
-        .orderBy(desc(sql`count(*)`))
-        .limit(limit);
+      const rows = await db.execute(sql`
+        SELECT
+          ic_cl.name AS cluster_name,
+          mi.metric_key,
+          COUNT(*)::int AS insight_count,
+          MAX(mi.created_at) AS latest_at
+        FROM meeting_insights mi
+        LEFT JOIN insight_clusters ic_cl ON ic_cl.id = mi.cluster_id
+        WHERE mi.enterprise_id = ${enterpriseId}
+          ${metricKeyFilter}
+          ${startFilter}
+          ${endFilter}
+          ${companyFilter}
+          ${clusterNameFilter}
+          ${rbacFilter}
+        GROUP BY ic_cl.name, mi.metric_key
+        ORDER BY COUNT(*) DESC
+        LIMIT ${limit}
+      `);
 
       return {
-        clusters: rows.map((r) => ({
-          cluster: r.clusterName ?? "Unclustered",
-          type: r.metricKey,
-          count: Number(r.insightCount),
-          lastSeen: r.latestAt
-            ? new Date(r.latestAt).toISOString().slice(0, 10)
+        clusters: (rows as any[]).map((r: any) => ({
+          cluster: r.cluster_name ?? "Unclustered",
+          type: r.metric_key,
+          count: Number(r.insight_count),
+          lastSeen: r.latest_at
+            ? new Date(r.latest_at).toISOString().slice(0, 10)
             : "—",
         })),
       };
     }
 
     // Flat chronological list
-    const rows = await db
-      .select({
-        metricKey: meetingInsights.metricKey,
-        details: meetingInsights.detailsJson,
-        clusterName: sql<string>`ic_cl.name`.as("cluster_name"),
-        createdAt: meetingInsights.createdAt,
-      })
-      .from(meetingInsights)
-      .leftJoin(
-        sql`insight_clusters ic_cl`,
-        sql`ic_cl.id = ${meetingInsights.clusterId}`,
-      )
-      .where(and(...conditions))
-      .orderBy(desc(meetingInsights.createdAt))
-      .limit(limit);
+    const rows = await db.execute(sql`
+      SELECT
+        mi.metric_key,
+        mi.details_json,
+        mi.created_at,
+        ic_cl.name AS cluster_name
+      FROM meeting_insights mi
+      LEFT JOIN insight_clusters ic_cl ON ic_cl.id = mi.cluster_id
+      WHERE mi.enterprise_id = ${enterpriseId}
+        ${metricKeyFilter}
+        ${startFilter}
+        ${endFilter}
+        ${companyFilter}
+        ${clusterNameFilter}
+        ${rbacFilter}
+      ORDER BY mi.created_at DESC
+      LIMIT ${limit}
+    `);
 
     return {
-      insights: rows.map((r) => ({
-        type: r.metricKey,
-        cluster: r.clusterName ?? "Unclustered",
-        details: r.details,
-        date: r.createdAt?.toISOString().slice(0, 10) ?? "—",
+      insights: (rows as any[]).map((r: any) => ({
+        type: r.metric_key,
+        cluster: r.cluster_name ?? "Unclustered",
+        details: r.details_json,
+        date: r.created_at
+          ? new Date(r.created_at).toISOString().slice(0, 10)
+          : "—",
       })),
     };
   },

@@ -57,17 +57,15 @@ export const searchTranscriptsKeyword = createTool({
       JOIN interactions i ON i.id = t.interaction_id
       LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
       LEFT JOIN companies c ON c.id = ic.company_id
-      WHERE t.search_vector @@ plainto_tsquery('english', ${input.query})
+      WHERE i.enterprise_id = ${enterpriseId}
+        AND t.search_vector @@ plainto_tsquery('english', ${input.query})
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::date` : sql``}
         ${input.endDate ? sql`AND i.start_at < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
         ${
           !getCompanyScope(capabilities)?.enterprise
-            ? sql`AND (
-                c.enterprise_id = ${enterpriseId}
-                AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}
-              )`
-            : sql`AND c.enterprise_id = ${enterpriseId}`
+            ? sql`AND ${buildKeyRoleScopeClause(getCompanyScope(capabilities), userId, "company", sql`c.id` as any) ?? sql`TRUE`}`
+            : sql``
         }
       ORDER BY rank DESC
       LIMIT ${limit}

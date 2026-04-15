@@ -95,6 +95,7 @@ export const getCompanyOverview = createTool({
           .from(companySignal)
           .where(
             and(
+              eq(companySignal.enterpriseId, enterpriseId),
               eq(companySignal.companyId, company.id),
               eq(companySignal.status, "open"),
             ),
