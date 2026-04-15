@@ -2122,6 +2122,7 @@ export const threadMessages = pgTable(
     textBody: text("text_body"),
     htmlBody: text("html_body"),
     searchVector: tsvector("search_vector"),
+    embedding: vector(1536)("embedding"),
     // Provider timestamp (when message was sent)
     sentAt: timestamptz("sent_at"),
 
@@ -4273,6 +4274,7 @@ export const ticketMessages = pgTable(
     sentAt: timestamptz("sent_at"),
 
     searchVector: tsvector("search_vector"),
+    embedding: vector(1536)("embedding"),
 
     metadata: jsonb("metadata").notNull().default("{}"),
 

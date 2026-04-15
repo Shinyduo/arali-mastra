@@ -5,6 +5,7 @@ export { getInsights } from "./get-insights.js";
 export { getOpenSignals } from "./get-open-signals.js";
 export { searchTranscriptsKeyword } from "./search-transcripts-keyword.js";
 export { searchThreadMessages } from "./search-thread-messages.js";
+export { searchTicketMessages } from "./search-ticket-messages.js";
 export { getContacts } from "./get-contacts.js";
 export { getInteractionTimeline } from "./get-interaction-timeline.js";
 export { getBillingOverview } from "./get-billing-overview.js";

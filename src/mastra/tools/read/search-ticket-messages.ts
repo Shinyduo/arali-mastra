@@ -14,23 +14,19 @@ import {
 const CANDIDATE_POOL = 50;
 const RRF_K = 60;
 
-export const searchThreadMessages = createTool({
-  id: "search-thread-messages",
+export const searchTicketMessages = createTool({
+  id: "search-ticket-messages",
   description:
-    "Search email, Slack, and WhatsApp messages by meaning or keyword (hybrid). " +
-    "Use for exact-phrase queries ('emails mentioning refund'), conceptual queries " +
-    "('where the customer sounded frustrated'), or mixed queries ('emails about pricing pushback'). " +
+    "Search support ticket messages by meaning or keyword (hybrid). " +
+    "Use for exact-phrase queries ('tickets mentioning timeout'), conceptual queries " +
+    "('tickets where users expressed frustration'), or mixed queries ('tickets about login errors'). " +
     "Combines full-text (tsvector) and semantic (embedding) ranking via Reciprocal Rank Fusion.",
   inputSchema: z.object({
     query: z.string().describe("Natural language or keyword query"),
-    channel: z
-      .enum(["email", "message", "whatsapp", "other"])
-      .optional()
-      .describe("Filter by communication channel"),
     companyName: z
       .string()
       .optional()
-      .describe("Filter to messages related to this company"),
+      .describe("Filter to tickets for this company"),
     startDate: z.string().optional().describe("Start date (YYYY-MM-DD)"),
     endDate: z.string().optional().describe("End date (YYYY-MM-DD)"),
     limit: z.number().int().min(1).max(30).optional().default(15),
@@ -47,9 +43,6 @@ export const searchThreadMessages = createTool({
     });
     const vectorStr = `[${embedding.join(",")}]`;
 
-    const channelFilter = input.channel
-      ? sql`AND th.channel = ${input.channel}`
-      : sql``;
     const companyFilter = input.companyName
       ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName)}`
       : sql``;
@@ -69,14 +62,13 @@ export const searchThreadMessages = createTool({
         SELECT tm.id,
                row_number() OVER (ORDER BY ts_rank(tm.search_vector, q) DESC) AS pos,
                ts_rank(tm.search_vector, q) AS ts_score
-        FROM thread_messages tm
-        JOIN threads th ON th.id = tm.thread_id
-        LEFT JOIN interaction_company ic ON ic.interaction_id = th.interaction_id
+        FROM ticket_messages tm
+        JOIN tickets t ON t.id = tm.ticket_id
+        LEFT JOIN interaction_company ic ON ic.interaction_id = t.interaction_id
         LEFT JOIN companies c ON c.id = ic.company_id,
              plainto_tsquery('english', ${input.query}) q
         WHERE tm.enterprise_id = ${enterpriseId}
           AND tm.search_vector @@ q
-          ${channelFilter}
           ${companyFilter}
           ${startFilter}
           ${endFilter}
@@ -87,13 +79,12 @@ export const searchThreadMessages = createTool({
         SELECT tm.id,
                row_number() OVER (ORDER BY tm.embedding <=> ${vectorStr}::vector ASC) AS pos,
                1 - (tm.embedding <=> ${vectorStr}::vector) AS vec_score
-        FROM thread_messages tm
-        JOIN threads th ON th.id = tm.thread_id
-        LEFT JOIN interaction_company ic ON ic.interaction_id = th.interaction_id
+        FROM ticket_messages tm
+        JOIN tickets t ON t.id = tm.ticket_id
+        LEFT JOIN interaction_company ic ON ic.interaction_id = t.interaction_id
         LEFT JOIN companies c ON c.id = ic.company_id
         WHERE tm.enterprise_id = ${enterpriseId}
           AND tm.embedding IS NOT NULL
-          ${channelFilter}
           ${companyFilter}
           ${startFilter}
           ${endFilter}
@@ -106,17 +97,17 @@ export const searchThreadMessages = createTool({
         tm.from_email,
         tm.sent_at,
         tm.direction,
-        th.subject AS thread_subject,
-        th.channel,
+        t.subject AS ticket_subject,
+        t.status AS ticket_status,
         c.name AS company_name,
         COALESCE(1.0 / (${RRF_K} + kw.pos), 0) + COALESCE(1.0 / (${RRF_K} + vec.pos), 0) AS rrf,
         kw.ts_score,
         vec.vec_score
-      FROM thread_messages tm
+      FROM ticket_messages tm
       LEFT JOIN kw ON kw.id = tm.id
       LEFT JOIN vec ON vec.id = tm.id
-      JOIN threads th ON th.id = tm.thread_id
-      LEFT JOIN interaction_company ic ON ic.interaction_id = th.interaction_id
+      JOIN tickets t ON t.id = tm.ticket_id
+      LEFT JOIN interaction_company ic ON ic.interaction_id = t.interaction_id
       LEFT JOIN companies c ON c.id = ic.company_id
       WHERE (kw.id IS NOT NULL OR vec.id IS NOT NULL)
       ORDER BY rrf DESC
@@ -131,12 +122,12 @@ export const searchThreadMessages = createTool({
             : r.text_body
           : "—";
         return {
-          threadSubject: r.thread_subject ?? "—",
+          ticketSubject: r.ticket_subject ?? "—",
+          ticketStatus: r.ticket_status ?? "—",
           messageSubject: r.message_subject ?? "—",
           body,
           from: r.from_email ?? "Unknown",
           direction: r.direction,
-          channel: r.channel,
           sentAt: r.sent_at
             ? new Date(r.sent_at).toISOString().slice(0, 10)
             : "—",

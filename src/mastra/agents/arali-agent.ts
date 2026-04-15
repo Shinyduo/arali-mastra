@@ -182,7 +182,9 @@ When answering complex questions, combine multiple tools:
 - "Which of my at-risk accounts haven't been contacted recently?" → get-companies (healthScoreMax=4, ownerEmail=user's email, daysSinceLastInteraction=14)
 - "What did John discuss about pricing this week?" → get-team-members (resolve "John" to email) → search-transcripts-keyword (query="pricing", email filter) or search-transcripts-semantic (conceptual search)
 - "Show me all unactioned signals and overdue tasks" → get-open-signals (unassigned=true) + get-action-items (overdue=true) — call both in parallel, then combine the results
-- "What's the CSAT trend for Acme?" → get-metrics (companyName="Acme", metricKey="csat") → get-portfolio-health-trend (for visual trend context)`;
+- "What's the CSAT trend for Acme?" → get-metrics (companyName="Acme", metricKey="csat") → get-portfolio-health-trend (for visual trend context)
+- "Find emails about pricing pushback" → search-thread-messages (hybrid keyword + semantic, no need to pre-classify the query)
+- "Find tickets where users sounded frustrated" → search-ticket-messages (hybrid — semantic ranking surfaces conceptual matches even without exact keywords)`;
 }
 
 function getToolsForCapabilities(
