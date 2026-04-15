@@ -414,7 +414,7 @@ export const getCompanies = createTool({
         WHERE fv.entity_type IN ('company', 'companies')
           AND fd.entity_type IN ('company', 'companies')
           AND fv.enterprise_id = ${enterpriseId}
-          AND fv.entity_id = ANY(${companyIds}::uuid[])
+          AND fv.entity_id = ANY(${pgUuidArray(companyIds)})
         ORDER BY fd.display_order NULLS LAST, fd.field_name
       `);
 

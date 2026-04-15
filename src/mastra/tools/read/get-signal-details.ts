@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { sql } from "drizzle-orm";
-import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch } from "../../../lib/rbac.js";
+import { extractContext, getCompanyScope, buildKeyRoleScopeClause, fuzzyNameMatch, pgUuidArray } from "../../../lib/rbac.js";
 
 export const getSignalDetails = createTool({
   id: "get-signal-details",
@@ -104,7 +104,7 @@ export const getSignalDetails = createTool({
             t.interaction_id,
             t.full_text
           FROM transcript t
-          WHERE t.interaction_id = ANY(${interactionIds}::uuid[])
+          WHERE t.interaction_id = ANY(${pgUuidArray(interactionIds)})
         `);
 
         for (const t of transcripts as any[]) {
