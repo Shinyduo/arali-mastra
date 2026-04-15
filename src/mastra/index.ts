@@ -60,6 +60,8 @@ const authMiddleware = createMiddleware(async (c, next) => {
     requestContext.set("userEmail", claims.email as string);
     requestContext.set("orgUnitIds", orgUnitIds);
     requestContext.set("capabilities", capabilities);
+    // Preserve raw JWT so tools can forward it to arali-backend public API calls.
+    requestContext.set("jwt", token);
   } catch {
     return c.json({ error: "Invalid or expired token" }, 401);
   }

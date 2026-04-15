@@ -177,6 +177,7 @@ export function extractContext(requestContext: {
     userEmail: requestContext.get("userEmail") as string,
     orgUnitIds: (requestContext.get("orgUnitIds") as string[]) ?? [],
     capabilities: (requestContext.get("capabilities") as ScopedCapabilityMap) ?? {},
+    jwt: (requestContext.get("jwt") as string) ?? "",
   };
 }
 

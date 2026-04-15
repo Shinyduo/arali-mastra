@@ -1,24 +1,24 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
-import { companies, fieldDefinitions } from "../../../db/schema.js";
+import { contacts, fieldDefinitions } from "../../../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 import { callBackendApi } from "../../../lib/backend-api.js";
 
-export const updateCompanyFields = createTool({
-  id: "update-company-fields",
+export const updateContactFields = createTool({
+  id: "update-contact-fields",
   description:
-    "Update custom field values on a company. " +
+    "Update custom field values on a contact (e.g. 'region', 'lead_source'). " +
     "IMPORTANT: First call WITHOUT confirmed=true to preview changes and see available fields. " +
     "Only set confirmed=true after user approves. " +
     "Each field has a key and type (text, number, date, boolean, enum, multi_enum, json).",
   inputSchema: z.object({
-    companyName: z.string().describe("Company name"),
+    contactName: z.string().describe("Contact full name (fuzzy match)"),
     fields: z
       .array(
         z.object({
-          fieldKey: z.string().describe("Custom field key (e.g. 'region', 'contract_value')"),
+          fieldKey: z.string().describe("Custom field key (e.g. 'region', 'lead_source')"),
           value: z
             .string()
             .nullable()
@@ -26,27 +26,28 @@ export const updateCompanyFields = createTool({
         }),
       )
       .describe("Fields to update"),
-    confirmed: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Set true only after user confirms"),
+    confirmed: z.boolean().optional().default(false).describe("Set true only after user confirms"),
   }),
   execute: async (input, context) => {
     const { enterpriseId, jwt } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
-    // Read-only lookup: fuzzy-match company name → UUID
+    // Read-only lookup: fuzzy-match contact → UUID
     const matched = await db
-      .select({ id: companies.id, name: companies.name })
-      .from(companies)
-      .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName)))
+      .select({ id: contacts.id, fullName: contacts.fullName })
+      .from(contacts)
+      .where(
+        and(
+          eq(contacts.enterpriseId, enterpriseId),
+          fuzzyNameMatch(contacts.fullName, input.contactName),
+        ),
+      )
       .limit(1);
 
-    if (!matched[0]) return { success: false, message: `Company "${input.companyName}" not found.` };
-    const company = matched[0];
+    if (!matched[0]) return { success: false, message: `Contact "${input.contactName}" not found.` };
+    const contact = matched[0];
 
-    // Read-only lookup: field definitions for companies (for preview + client-side validation of field keys)
+    // Read-only lookup: contact field definitions (for preview + client-side key validation)
     const defs = await db
       .select({
         id: fieldDefinitions.id,
@@ -59,13 +60,12 @@ export const updateCompanyFields = createTool({
       .where(
         and(
           eq(fieldDefinitions.enterpriseId, enterpriseId),
-          sql`${fieldDefinitions.entityType} IN ('company', 'companies')`,
+          sql`${fieldDefinitions.entityType} IN ('contact', 'contacts')`,
         ),
       );
 
     const defMap = new Map(defs.map((d) => [d.key, d]));
 
-    // Client-side validation: reject unknown field keys early so we don't waste a round-trip
     const errors: string[] = [];
     const validFields: { def: (typeof defs)[0]; rawValue: string | null }[] = [];
 
@@ -81,7 +81,7 @@ export const updateCompanyFields = createTool({
     if (!confirmed) {
       return {
         needsConfirmation: true,
-        company: company.name,
+        contact: contact.fullName,
         changes: validFields.map((f) => ({
           field: f.def.name,
           key: f.def.key,
@@ -95,9 +95,10 @@ export const updateCompanyFields = createTool({
           type: d.type,
           enumOptions: d.enumOptions,
         })),
-        message: errors.length > 0
-          ? `Some fields are invalid. Please fix and try again.`
-          : `Update ${validFields.length} field(s) on "${company.name}"?`,
+        message:
+          errors.length > 0
+            ? `Some fields are invalid. Please fix and try again.`
+            : `Update ${validFields.length} field(s) on "${contact.fullName}"?`,
       };
     }
 
@@ -109,16 +110,15 @@ export const updateCompanyFields = createTool({
       };
     }
 
-    // Build properties map keyed by fieldKey — backend `processFieldValues()` handles type coercion + upsert
     const properties: Record<string, unknown> = {};
     for (const f of validFields) {
       properties[f.def.key] = f.rawValue;
     }
 
-    // Mutation: PUT /api/v1/companies/:id — backend writes field_values + entity_activity_log + publishes workflow.trigger
+    // Mutation: PUT /api/v1/contacts/:id — backend handles field_values upsert + activity log + workflow.trigger
     const resp = await callBackendApi({
       method: "PUT",
-      path: `/api/v1/companies/${company.id}`,
+      path: `/api/v1/contacts/${contact.id}`,
       body: { properties },
       jwt,
     });
@@ -129,7 +129,7 @@ export const updateCompanyFields = createTool({
 
     return {
       success: true,
-      message: `Updated ${validFields.length} field(s) on "${company.name}".`,
+      message: `Updated ${validFields.length} field(s) on "${contact.fullName}".`,
     };
   },
 });

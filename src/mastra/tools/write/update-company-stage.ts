@@ -4,7 +4,7 @@ import { db } from "../../../db/index.js";
 import { companies, stageDefinition } from "../../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
-import { logActivity } from "../../../lib/activity-log.js";
+import { callBackendApi } from "../../../lib/backend-api.js";
 
 export const updateCompanyStage = createTool({
   id: "update-company-stage",
@@ -17,65 +17,65 @@ export const updateCompanyStage = createTool({
     confirmed: z.boolean().optional().default(false).describe("Set true only after user confirms"),
   }),
   execute: async (input, context) => {
-    const { enterpriseId, userId } = extractContext(context.requestContext!);
+    const { enterpriseId, jwt } = extractContext(context.requestContext!);
     const confirmed = input.confirmed ?? false;
 
-    if (!confirmed) {
-      return { needsConfirmation: true, message: `Move "${input.companyName}" to stage "${input.targetStageKey}"?` };
-    }
+    // Read-only lookup: fuzzy-match the company name → UUID (public API has no fuzzy-by-name endpoint)
+    const matched = await db
+      .select({ id: companies.id, name: companies.name, stageDefinitionId: companies.stageDefinitionId })
+      .from(companies)
+      .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName)))
+      .limit(1);
 
-    try {
-      const matched = await db
-        .select({ id: companies.id, name: companies.name, stageDefinitionId: companies.stageDefinitionId })
-        .from(companies)
-        .where(and(eq(companies.enterpriseId, enterpriseId), fuzzyNameMatch(companies.name, input.companyName)))
-        .limit(1);
+    if (!matched[0]) return { success: false, message: `Company "${input.companyName}" not found.` };
 
-      if (!matched[0]) return { success: false, message: `Company "${input.companyName}" not found.` };
+    // Validate target stage exists before preview/confirm
+    const stage = await db
+      .select({ id: stageDefinition.id, name: stageDefinition.name })
+      .from(stageDefinition)
+      .where(and(
+        eq(stageDefinition.enterpriseId, enterpriseId),
+        eq(stageDefinition.scope, "company"),
+        eq(stageDefinition.key, input.targetStageKey),
+        eq(stageDefinition.isActive, true),
+      ))
+      .limit(1);
 
-      // Fetch old stage name for the log
-      let fromStageName: string | undefined;
-      if (matched[0].stageDefinitionId) {
-        const oldStage = await db
-          .select({ name: stageDefinition.name })
-          .from(stageDefinition)
-          .where(eq(stageDefinition.id, matched[0].stageDefinitionId))
-          .limit(1);
-        fromStageName = oldStage[0]?.name;
-      }
+    if (!stage[0]) return { success: false, message: `Stage "${input.targetStageKey}" not found for companies.` };
 
-      const stage = await db
-        .select({ id: stageDefinition.id, name: stageDefinition.name })
+    // Resolve current stage label for preview
+    let fromStageName: string | undefined;
+    if (matched[0].stageDefinitionId) {
+      const oldStage = await db
+        .select({ name: stageDefinition.name })
         .from(stageDefinition)
-        .where(and(
-          eq(stageDefinition.enterpriseId, enterpriseId),
-          eq(stageDefinition.scope, "company"),
-          eq(stageDefinition.key, input.targetStageKey),
-          eq(stageDefinition.isActive, true),
-        ))
+        .where(eq(stageDefinition.id, matched[0].stageDefinitionId))
         .limit(1);
-
-      if (!stage[0]) return { success: false, message: `Stage "${input.targetStageKey}" not found.` };
-
-      await db.update(companies).set({ stageDefinitionId: stage[0].id, updatedAt: new Date() }).where(eq(companies.id, matched[0].id));
-
-      await logActivity({
-        enterpriseId,
-        entityType: "company",
-        entityId: matched[0].id,
-        actionType: "stage_changed",
-        actorUserId: userId,
-        metadata: {
-          entity_label: matched[0].name,
-          from_label: fromStageName,
-          to_label: stage[0].name,
-          source: "ai",
-        },
-      });
-
-      return { success: true, message: `${matched[0].name} moved to stage "${stage[0].name}".` };
-    } catch (err: any) {
-      return { success: false, message: `Failed: ${err.message}` };
+      fromStageName = oldStage[0]?.name;
     }
+
+    if (!confirmed) {
+      return {
+        needsConfirmation: true,
+        company: matched[0].name,
+        from: fromStageName ?? "—",
+        to: stage[0].name,
+        message: `Move "${matched[0].name}" from "${fromStageName ?? "—"}" to "${stage[0].name}"?`,
+      };
+    }
+
+    // Mutation: PUT /api/v1/companies/:id — backend writes stage, entity_activity_log, and publishes workflow.trigger
+    const resp = await callBackendApi({
+      method: "PUT",
+      path: `/api/v1/companies/${matched[0].id}`,
+      body: { stageKey: input.targetStageKey },
+      jwt,
+    });
+
+    if (!resp.ok) {
+      return { success: false, message: `Failed to update stage: ${resp.error}` };
+    }
+
+    return { success: true, message: `${matched[0].name} moved to stage "${stage[0].name}".` };
   },
 });

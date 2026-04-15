@@ -69,6 +69,7 @@ async function resolveUserContext(token: string): Promise<AraliRuntimeContext> {
     userEmail: claims.email as string,
     orgUnitIds,
     capabilities,
+    jwt: token,
   };
 }
 

@@ -5,3 +5,7 @@ export { updateCompanyStage } from "./update-company-stage.js";
 export { assignKeyRole } from "./assign-key-role.js";
 export { createEntityNote } from "./create-entity-note.js";
 export { updateCompanyFields } from "./update-company-fields.js";
+export { updateContactStage } from "./update-contact-stage.js";
+export { updateContactFields } from "./update-contact-fields.js";
+export { createContact } from "./create-contact.js";
+export { createCompany } from "./create-company.js";
