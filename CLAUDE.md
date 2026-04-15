@@ -142,6 +142,16 @@ Key conventions:
 - Metrics and key role definitions use hierarchical override: `DISTINCT ON (key) ORDER BY priority` (org_unit > enterprise > global)
 - Composite tools (`brief-me`, `my-day-today`, `weekly-digest`) run parallel DB queries directly, not via sub-tool calls
 
+### Write tools: route mutations through the public API
+
+All create/update mutations on CRM entities (companies, contacts, accounts, `field_values`, stages) **must** call the arali-backend public API via `callBackendApi()` in `src/lib/backend-api.ts`, not `db.insert()` / `db.update()` directly.
+
+- The public-API handlers publish `workflow.trigger` jobs to pgboss via `checkAndPublishWorkflowTriggers()`, write `entity_activity_logs`, and do integration-mapping upserts. Direct-DB writes skip all of this silently.
+- Forward the user's JWT from `extractContext().jwt`. The auth middleware in `src/mastra/index.ts` preserves the raw Bearer token on `requestContext` for this purpose. `hasScope()` in arali-backend passes when the `scopes` claim is absent, so no new credentials are needed.
+- Fuzzy-match human names to UUIDs via DB (the public API has no fuzzy-by-name endpoints), show resolved matches in the `needsConfirmation` preview, then send IDs to the API. Read-only DB lookups inside a write tool are fine — only mutations must go through the API.
+- Pattern reference: `update-company-stage.ts`, `create-contact.ts`, `update-contact-fields.ts`.
+- If a mutation isn't exposed on `/api/v1/*` yet, add the endpoint in arali-backend before writing the Mastra tool.
+
 ## Environment Variables
 
 | Variable | Required | Description |
