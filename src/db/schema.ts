@@ -1029,11 +1029,6 @@ export const metrics = pgTable(
     updatedAt: timestamptz("updated_at").defaultNow().notNull(),
   },
   (table) => ({
-    metricsOrgUnitEnterpriseKeyUnique: uniqueIndex("metrics_org_unit_enterprise_key_unique").on(
-      table.orgUnitId,
-      table.enterpriseId,
-      table.key
-    ),
     metricsApplicableOrgTypesGin: index(
       "metrics_applicable_org_types_gin"
     ).using("gin", table.applicableOrgTypes),
