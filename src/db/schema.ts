@@ -1025,6 +1025,7 @@ export const metrics = pgTable(
     buckets: jsonb("buckets"),
     version: integer("version").notNull().default(1),
     isAiGenerated: text("is_ai_generated"),
+    isMandatory: boolean("is_mandatory").notNull().default(false),
     createdAt: timestamptz("created_at").defaultNow().notNull(),
     updatedAt: timestamptz("updated_at").defaultNow().notNull(),
   },
