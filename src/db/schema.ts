@@ -4798,16 +4798,15 @@ export const stageFieldMapping = pgTable(
   })
 );
 
-export const companySummaryCache = pgTable(
-  "company_summary_cache",
+export const entitySummaryCache = pgTable(
+  "entity_summary_cache",
   {
     id: uuid("id").defaultRandom().primaryKey().notNull(),
     enterpriseId: uuid("enterprise_id")
       .notNull()
       .references(() => enterprise.id, { onDelete: "cascade" }),
-    companyId: uuid("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id").notNull(),
     summary: text("summary").notNull(),
     dataHash: text("data_hash").notNull(),
     modelUsed: text("model_used"),
@@ -4818,11 +4817,11 @@ export const companySummaryCache = pgTable(
     updatedAt: timestamptz("updated_at").defaultNow().notNull(),
   },
   (table) => ({
-    companySummaryCacheEnterpriseCompanyUq: uniqueIndex(
-      "company_summary_cache_enterprise_company_uq"
-    ).on(table.enterpriseId, table.companyId),
-    companySummaryCacheGeneratedAtIdx: index(
-      "company_summary_cache_generated_at_idx"
+    entitySummaryCacheUq: uniqueIndex(
+      "entity_summary_cache_enterprise_entity_uq"
+    ).on(table.enterpriseId, table.entityType, table.entityId),
+    entitySummaryCacheGeneratedAtIdx: index(
+      "entity_summary_cache_generated_at_idx"
     ).on(table.generatedAt),
   })
 );
