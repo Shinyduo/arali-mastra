@@ -2281,6 +2281,7 @@ export const fieldDefinitions = pgTable(
     displayOrder: integer("display_order"),
     isSystem: boolean("is_system").notNull().default(true),
     showInQuickAdd: boolean("show_in_quick_add").notNull().default(false),
+    isImportant: boolean("is_important").notNull().default(false),
     color: jsonb("color"),
     createdAt: timestamptz("created_at").defaultNow().notNull(),
     updatedAt: timestamptz("updated_at").defaultNow().notNull(),
@@ -4794,5 +4795,34 @@ export const stageFieldMapping = pgTable(
       table.stageDefinitionId,
       table.fieldDefinitionId
     ),
+  })
+);
+
+export const companySummaryCache = pgTable(
+  "company_summary_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    enterpriseId: uuid("enterprise_id")
+      .notNull()
+      .references(() => enterprise.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    summary: text("summary").notNull(),
+    dataHash: text("data_hash").notNull(),
+    modelUsed: text("model_used"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    generatedAt: timestamptz("generated_at").defaultNow().notNull(),
+    createdAt: timestamptz("created_at").defaultNow().notNull(),
+    updatedAt: timestamptz("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companySummaryCacheEnterpriseCompanyUq: uniqueIndex(
+      "company_summary_cache_enterprise_company_uq"
+    ).on(table.enterpriseId, table.companyId),
+    companySummaryCacheGeneratedAtIdx: index(
+      "company_summary_cache_generated_at_idx"
+    ).on(table.generatedAt),
   })
 );
