@@ -236,6 +236,10 @@ export const orgUnitTypeEnum = pgEnum("org_unit_type", [
   "cs",
   "onboarding",
   "exec",
+  "marketing",
+  "pre_sales",
+  "support",
+  "revops",
 ]);
 
 // NOTE: Postgres allows a type and a table to share the same name. To avoid TS symbol conflicts, the
