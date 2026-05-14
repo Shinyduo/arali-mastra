@@ -21,7 +21,7 @@ export const getOpenSignals = createTool({
       .optional()
       .describe("Severity filter"),
     status: z
-      .enum(["open", "addressed", "resolved", "dismissed", "reopened"])
+      .enum(["open", "in_progress", "resolved", "dismissed", "reopened"])
       .optional()
       .default("open")
       .describe("Status filter"),

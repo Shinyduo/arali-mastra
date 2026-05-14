@@ -2880,7 +2880,7 @@ export const companySignalTypeEnum = pgEnum("company_signal_type", [
 // lifecycle
 export const companySignalStatusEnum = pgEnum("company_signal_status", [
   "open",
-  "addressed",
+  "in_progress",
   "resolved",
   "dismissed",
   "reopened",
@@ -2966,7 +2966,7 @@ export const companySignal = pgTable(
     firstSeenAt: timestamptz("first_seen_at").defaultNow().notNull(),
     lastSeenAt: timestamptz("last_seen_at").defaultNow().notNull(),
 
-    addressedAt: timestamptz("addressed_at"),
+    inProgressAt: timestamptz("in_progress_at"),
     resolvedAt: timestamptz("resolved_at"),
     dismissedAt: timestamptz("dismissed_at"),
     reopenedAt: timestamptz("reopened_at"),

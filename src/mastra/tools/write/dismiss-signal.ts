@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { db } from "../../../db/index.js";
 import { companySignal, companies } from "../../../db/schema.js";
-import { eq, and, ilike } from "drizzle-orm";
+import { eq, and, ilike, inArray } from "drizzle-orm";
 import { extractContext, fuzzyNameMatch } from "../../../lib/rbac.js";
 
 export const dismissSignal = createTool({
@@ -32,11 +32,11 @@ export const dismissSignal = createTool({
           eq(companySignal.enterpriseId, enterpriseId),
           fuzzyNameMatch(companies.name, input.companyName),
           ilike(companySignal.title, `%${input.signalTitle}%`),
-          eq(companySignal.status, "open"),
+          inArray(companySignal.status, ["open", "in_progress"]),
         ))
         .limit(1);
 
-      if (!signals[0]) return { success: false, message: "No matching open signal found." };
+      if (!signals[0]) return { success: false, message: "No matching open/in-progress signal found." };
 
       await db.update(companySignal)
         .set({ status: "dismissed", dismissedAt: new Date(), updatedAt: new Date() })
