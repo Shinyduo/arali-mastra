@@ -2880,7 +2880,6 @@ export const companySignalTypeEnum = pgEnum("company_signal_type", [
 // lifecycle
 export const companySignalStatusEnum = pgEnum("company_signal_status", [
   "open",
-  "in_progress",
   "addressed",
   "resolved",
   "dismissed",
@@ -2967,7 +2966,6 @@ export const companySignal = pgTable(
     firstSeenAt: timestamptz("first_seen_at").defaultNow().notNull(),
     lastSeenAt: timestamptz("last_seen_at").defaultNow().notNull(),
 
-    inProgressAt: timestamptz("in_progress_at"),
     addressedAt: timestamptz("addressed_at"),
     resolvedAt: timestamptz("resolved_at"),
     dismissedAt: timestamptz("dismissed_at"),
@@ -3182,48 +3180,6 @@ export const usageMetricTypeEnum = pgEnum("usage_metric_type", [
 
 /**
  * ============================
- * 0) PRODUCT LINES (organizational grouping for products)
- * ============================
- * Optional grouping layer. A product line groups related products (e.g. "Visual Content" = Image + Video + 360).
- * Purely catalog metadata — no impact on billing, subscriptions, or entitlements.
- */
-export const billingProductLines = pgTable(
-  "billing_product_line",
-  {
-    id: uuid("id").defaultRandom().primaryKey().notNull(),
-
-    enterpriseId: uuid("enterprise_id")
-      .notNull()
-      .references(() => enterprise.id, { onDelete: "cascade" }),
-
-    key: text("key").notNull(),
-    name: text("name").notNull(),
-    description: text("description"),
-
-    status: billingProductStatusEnum("status").notNull().default("active"),
-    sortOrder: integer("sort_order").notNull().default(0),
-    config: jsonb("config").notNull().default({}),
-
-    createdAt: timestamptz("created_at").defaultNow().notNull(),
-    updatedAt: timestamptz("updated_at").defaultNow().notNull(),
-  },
-  (t) => ({
-    productLineEntIdx: index("billing_product_line_enterprise_idx").on(
-      t.enterpriseId
-    ),
-    productLineKeyUq: uniqueIndex("billing_product_line_enterprise_key_uq").on(
-      t.enterpriseId,
-      t.key
-    ),
-    productLineStatusIdx: index("billing_product_line_status_idx").on(
-      t.enterpriseId,
-      t.status
-    ),
-  })
-);
-
-/**
- * ============================
  * 1) PRODUCTS (enterprise-scoped product/feature catalog)
  * ============================
  * One row per enterprise per SKU you want to track (image/360/video or small features like pdf_export).
@@ -3242,11 +3198,6 @@ export const billingProducts = pgTable(
 
     name: text("name").notNull(),
     description: text("description"),
-
-    productLineId: uuid("product_line_id").references(
-      () => billingProductLines.id,
-      { onDelete: "set null" }
-    ),
 
     kind: billingProductKindEnum("kind").notNull().default("core_product"),
     status: billingProductStatusEnum("status").notNull().default("active"),
@@ -3284,10 +3235,6 @@ export const billingProducts = pgTable(
       t.enterpriseId,
       t.externalProductId
     ).where(sql`external_product_id IS NOT NULL`),
-    productLineIdx: index("billing_product_line_idx").on(
-      t.enterpriseId,
-      t.productLineId
-    ),
   })
 );
 

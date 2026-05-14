@@ -21,6 +21,7 @@ import { briefMe as _briefMe } from "./brief-me.js";
 import { myDayToday as _myDayToday } from "./my-day-today.js";
 import { weeklyDigest as _weeklyDigest } from "./weekly-digest.js";
 import { getTeamPortfolio as _getTeamPortfolio } from "./get-team-portfolio.js";
+import { getUnansweredThreads as _getUnansweredThreads } from "./get-unanswered-threads.js";
 
 export const getCompanies = safeWrap(_getCompanies);
 export const getCompanyOverview = safeWrap(_getCompanyOverview);
@@ -43,3 +44,4 @@ export const briefMe = safeWrap(_briefMe);
 export const myDayToday = safeWrap(_myDayToday);
 export const weeklyDigest = safeWrap(_weeklyDigest);
 export const getTeamPortfolio = safeWrap(_getTeamPortfolio);
+export const getUnansweredThreads = safeWrap(_getUnansweredThreads);
