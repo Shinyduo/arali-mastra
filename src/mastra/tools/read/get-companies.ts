@@ -246,7 +246,10 @@ export const getCompanies = createTool({
         ? sql`NOT EXISTS (
             SELECT 1 FROM interaction_company ic
             JOIN interactions i ON i.id = ic.interaction_id
+            LEFT JOIN meetings m ON m.interaction_id = i.id AND i.kind = 'meeting'
             WHERE ic.company_id = ${companies.id}
+              AND i.kind != 'ticket'
+              AND (i.kind != 'meeting' OR m.status = 'completed')
               AND i.start_at >= NOW() - INTERVAL '${sql.raw(String(input.daysSinceLastInteraction))} days'
           )`
         : undefined,
