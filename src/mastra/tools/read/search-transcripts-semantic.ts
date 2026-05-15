@@ -57,9 +57,11 @@ export const searchTranscriptsSemantic = createTool({
       FROM transcript_chunk_embedding tce
       JOIN transcript t ON t.id = tce.transcript_id
       JOIN interactions i ON i.id = t.interaction_id
+      LEFT JOIN meetings m ON m.interaction_id = i.id
+      LEFT JOIN calls cl ON cl.interaction_id = i.id
       LEFT JOIN interaction_company ic ON ic.interaction_id = i.id
       LEFT JOIN companies c ON c.id = ic.company_id
-      WHERE i.enterprise_id = ${enterpriseId}
+      WHERE COALESCE(m.enterprise_id, cl.enterprise_id) = ${enterpriseId}
         ${input.companyName ? sql`AND ${fuzzyNameMatch(sql`c.name`, input.companyName!)}` : sql``}
         ${input.startDate ? sql`AND i.start_at >= ${input.startDate}::date` : sql``}
         ${input.endDate ? sql`AND i.start_at < (${input.endDate}::date + INTERVAL '1 day')` : sql``}
