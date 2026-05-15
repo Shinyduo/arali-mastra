@@ -16,3 +16,4 @@ const port = Number(process.env.PORT) || 4111;
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Arali Mastra server running on port ${info.port}`);
 });
+
