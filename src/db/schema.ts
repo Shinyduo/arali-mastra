@@ -4802,6 +4802,39 @@ export const stageFieldMapping = pgTable(
   })
 );
 
+export const toolInvocations = pgTable(
+  "tool_invocations",
+  {
+    id: uuid("id").defaultRandom().primaryKey().notNull(),
+    enterpriseId: uuid("enterprise_id")
+      .notNull()
+      .references(() => enterprise.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUser.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    sessionId: text("session_id"),
+    toolId: text("tool_id").notNull(),
+    input: jsonb("input"),
+    status: text("status").notNull().default("success"),
+    errorMessage: text("error_message"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamptz("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    enterpriseUserIdx: index("tool_invocations_enterprise_user_idx").on(
+      t.enterpriseId,
+      t.userId,
+      t.createdAt,
+    ),
+    toolSourceIdx: index("tool_invocations_tool_source_idx").on(
+      t.toolId,
+      t.source,
+      t.createdAt,
+    ),
+  }),
+);
+
 export const entitySummaryCache = pgTable(
   "entity_summary_cache",
   {

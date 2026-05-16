@@ -76,4 +76,5 @@ export const MCP_INSTRUCTIONS = `You are connected to Arali CRM. You have access
 - If a filter doesn't exist, use the closest available and explain the limitation
 - Never retry the same call repeatedly — answer with what you found
 - If results are empty, suggest alternatives (different stage name, broader time range)
-- If a tool returns \`{ error, toolId }\`, the tool failed server-side. Do NOT retry the exact same call — either try a different approach, relax the filters, or tell the user the tool is currently unavailable`;
+- If a tool returns \`{ error, toolId }\`, the tool failed server-side. Do NOT retry the exact same call — either try a different approach, relax the filters, or tell the user the tool is currently unavailable
+- If you genuinely cannot answer the user's question because no tool exists for it or the data isn't available, use submit-feedback to log their request for the team`;

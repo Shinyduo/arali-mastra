@@ -22,6 +22,7 @@ import { myDayToday as _myDayToday } from "./my-day-today.js";
 import { weeklyDigest as _weeklyDigest } from "./weekly-digest.js";
 import { getTeamPortfolio as _getTeamPortfolio } from "./get-team-portfolio.js";
 import { getUnansweredThreads as _getUnansweredThreads } from "./get-unanswered-threads.js";
+import { submitFeedback as _submitFeedback } from "./submit-feedback.js";
 
 export const getCompanies = safeWrap(_getCompanies);
 export const getCompanyOverview = safeWrap(_getCompanyOverview);
@@ -45,3 +46,4 @@ export const myDayToday = safeWrap(_myDayToday);
 export const weeklyDigest = safeWrap(_weeklyDigest);
 export const getTeamPortfolio = safeWrap(_getTeamPortfolio);
 export const getUnansweredThreads = safeWrap(_getUnansweredThreads);
+export const submitFeedback = safeWrap(_submitFeedback);

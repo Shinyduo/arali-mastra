@@ -6,6 +6,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShape } from "zod";
 import type { AraliRuntimeContext } from "../mastra/context/types.js";
+import { logToolInvocation } from "../lib/tool-logger.js";
 import * as readTools from "../mastra/tools/read/index.js";
 import * as writeTools from "../mastra/tools/write/index.js";
 
@@ -53,9 +54,20 @@ export function registerAraliTools(
         inputSchema: zodShape,
       },
       async (args: Record<string, unknown>) => {
+        const start = Date.now();
         try {
           const result = await mastraTool.execute(args, {
             requestContext: mockRequestContext,
+          });
+          logToolInvocation({
+            enterpriseId: userContext.enterpriseId,
+            userId: userContext.userId,
+            source: "mcp",
+            sessionId: userContext.mcpSessionId,
+            toolId: mastraTool.id,
+            input: args,
+            status: "success",
+            durationMs: Date.now() - start,
           });
           return {
             content: [
@@ -67,6 +79,17 @@ export function registerAraliTools(
           };
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
+          logToolInvocation({
+            enterpriseId: userContext.enterpriseId,
+            userId: userContext.userId,
+            source: "mcp",
+            sessionId: userContext.mcpSessionId,
+            toolId: mastraTool.id,
+            input: args,
+            status: "error",
+            durationMs: Date.now() - start,
+            errorMessage: message,
+          });
           return {
             content: [{ type: "text" as const, text: `Error: ${message}` }],
             isError: true,

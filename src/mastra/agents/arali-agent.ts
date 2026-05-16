@@ -8,6 +8,7 @@ import { PostgresStore } from "@mastra/pg";
 import type { Tool } from "@mastra/core/tools";
 import type { ScopedCapabilityMap } from "../../lib/resolve-user-role.js";
 import { hasWriteAccess, getCompanyScope } from "../../lib/rbac.js";
+import { logToolInvocation } from "../../lib/tool-logger.js";
 
 const openrouter = createOpenRouter();
 
@@ -173,6 +174,7 @@ Before making tool calls, briefly plan your approach:
 - If a requested filter or parameter does not exist in a tool, use the closest available filter, return the results, and clearly explain the limitation in your response (e.g. "I filtered by stage but couldn't filter by exact duration — here are all companies in that stage:")
 - Never retry the same tool call repeatedly if the results don't perfectly match the request — answer with what you found and note what you couldn't filter
 - If results are empty, say so clearly and suggest alternatives (e.g. different stage name, broader time range)
+- If you genuinely cannot answer the user's question because no tool exists for it or the data isn't available, use the submit-feedback tool to log their request. Tell the user you've noted it for the team, then suggest any alternative approach you can offer
 
 ## Multi-Tool Orchestration
 When answering complex questions, combine multiple tools:
@@ -187,15 +189,60 @@ When answering complex questions, combine multiple tools:
 - "Find tickets where users sounded frustrated" → search-ticket-messages (hybrid — semantic ranking surfaces conceptual matches even without exact keywords)`;
 }
 
+function wrapToolWithLogging(
+  tool: Tool<any, any>,
+  enterpriseId: string,
+  userId: string,
+): Tool<any, any> {
+  const originalExecute = tool.execute;
+  if (!originalExecute) return tool;
+
+  const wrapped = Object.create(tool) as Tool<any, any>;
+  wrapped.execute = async (input: unknown, context: any) => {
+    const start = Date.now();
+    try {
+      const result = await originalExecute.call(tool, input, context);
+      logToolInvocation({
+        enterpriseId,
+        userId,
+        source: "chat",
+        toolId: tool.id,
+        input,
+        status: "success",
+        durationMs: Date.now() - start,
+      });
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logToolInvocation({
+        enterpriseId,
+        userId,
+        source: "chat",
+        toolId: tool.id,
+        input,
+        status: "error",
+        durationMs: Date.now() - start,
+        errorMessage: message,
+      });
+      throw err;
+    }
+  };
+  return wrapped;
+}
+
 function getToolsForCapabilities(
   capabilities: ScopedCapabilityMap,
+  enterpriseId?: string,
+  userId?: string,
 ): Record<string, Tool<any, any>> {
   const tools: Record<string, Tool<any, any>> = {};
+  const shouldLog = !!enterpriseId && !!userId;
 
   // Read tools — always available (RBAC is enforced inside each tool)
   for (const [key, tool] of Object.entries(readTools)) {
     if (tool && typeof tool === "object" && "id" in tool) {
-      tools[key] = tool as Tool<any, any>;
+      const t = tool as Tool<any, any>;
+      tools[key] = shouldLog ? wrapToolWithLogging(t, enterpriseId, userId) : t;
     }
   }
 
@@ -203,7 +250,8 @@ function getToolsForCapabilities(
   if (hasWriteAccess(capabilities)) {
     for (const [key, tool] of Object.entries(writeTools)) {
       if (tool && typeof tool === "object" && "id" in tool) {
-        tools[key] = tool as Tool<any, any>;
+        const t = tool as Tool<any, any>;
+        tools[key] = shouldLog ? wrapToolWithLogging(t, enterpriseId, userId) : t;
       }
     }
   }
@@ -252,6 +300,8 @@ export const araliAgent = new Agent({
 
   tools: ({ requestContext }) => {
     const capabilities = (requestContext.get("capabilities") as ScopedCapabilityMap) ?? {};
-    return getToolsForCapabilities(capabilities);
+    const enterpriseId = requestContext.get("enterpriseId") as string | undefined;
+    const userId = requestContext.get("userId") as string | undefined;
+    return getToolsForCapabilities(capabilities, enterpriseId, userId);
   },
 });

@@ -113,6 +113,7 @@ export async function handleMcp(c: Context) {
     sessionIdGenerator: () => crypto.randomUUID(),
     onsessioninitialized: (id) => {
       sessions.set(id, { transport, server });
+      userContext.mcpSessionId = id;
       console.log(`MCP session started: ${id} (user: ${userContext.userEmail})`);
     },
     onsessionclosed: (id) => {

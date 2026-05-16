@@ -12,4 +12,6 @@ export type AraliRuntimeContext = {
    * to the arali-backend public API for mutations that need workflow triggers.
    */
   jwt: string;
+  /** Set after MCP session init; mutable so the transport callback can fill it in. */
+  mcpSessionId?: string;
 };
